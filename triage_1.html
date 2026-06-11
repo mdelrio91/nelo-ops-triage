@@ -1,0 +1,2153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Nelo Ops — Triage Classifier</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#0f0f11;--bg2:#16161a;--bg3:#1e1e24;
+  --border:#2a2a32;--border2:#3a3a46;
+  --text:#e8e8f0;--text2:#8888a0;--text3:#4a4a60;
+  --p0-bg:#2d0f0f;--p0-border:#7a1c1c;--p0-text:#ff6b6b;--p0-badge:#ff4444;
+  --p1-bg:#1f1a08;--p1-border:#6b4e0a;--p1-text:#ffa940;--p1-badge:#ff8800;
+  --p2-bg:#0d1a2d;--p2-border:#1a3a6b;--p2-text:#4da6ff;--p2-badge:#2288ff;
+  --p3-bg:#111118;--p3-border:#2a2a38;--p3-text:#8888a0;--p3-badge:#555566;
+  --accent:#6c63ff;--green:#1d9e75;--red:#ff4444;
+  --font:'IBM Plex Sans',sans-serif;--mono:'IBM Plex Mono',monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;line-height:1.5;min-height:100vh}
+.layout{display:grid;grid-template-columns:240px 1fr;min-height:100vh}
+
+/* ── SIDEBAR ── */
+.sidebar{background:var(--bg2);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto}
+.sidebar-header{padding:20px 18px 16px;border-bottom:1px solid var(--border)}
+.logo{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);letter-spacing:.05em}
+.logo span{color:var(--accent)}
+.tagline{font-size:11px;color:var(--text3);margin-top:3px;font-family:var(--mono)}
+.sidebar-section{padding:14px 18px 8px}
+.sidebar-label{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}
+.tier-filter{display:flex;flex-direction:column;gap:4px}
+.tier-btn{display:flex;align-items:center;justify-content:space-between;padding:8px 10px;border-radius:6px;border:1px solid transparent;cursor:pointer;background:transparent;font-family:var(--font);font-size:13px;color:var(--text2);transition:all .15s;text-align:left;width:100%}
+.tier-btn:hover{background:var(--bg3)}
+.tier-btn.active{border-color:var(--border2);background:var(--bg3);color:var(--text)}
+.tier-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-right:8px}
+.tier-count{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.t-p0{background:var(--p0-badge)}.t-p1{background:var(--p1-badge)}.t-p2{background:var(--p2-badge)}.t-p3{background:var(--p3-badge)}
+.sidebar-divider{border:none;border-top:1px solid var(--border);margin:8px 0}
+.agent-list{display:flex;flex-direction:column;gap:3px}
+.agent-btn{display:flex;align-items:center;gap:8px;padding:6px 10px;border-radius:6px;border:1px solid transparent;cursor:pointer;background:transparent;font-family:var(--font);font-size:12px;color:var(--text2);transition:all .15s;text-align:left;width:100%}
+.agent-btn:hover{background:var(--bg3);color:var(--text)}
+.agent-btn.active{background:var(--bg3);border-color:var(--border2);color:var(--text)}
+.agent-avatar{width:22px;height:22px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:600;flex-shrink:0;font-family:var(--mono)}
+.nav-btn{display:flex;align-items:center;gap:8px;padding:8px 10px;border-radius:6px;border:1px solid transparent;cursor:pointer;background:transparent;font-family:var(--font);font-size:13px;color:var(--text2);transition:all .15s;width:100%;text-align:left}
+.nav-btn:hover{background:var(--bg3);color:var(--text)}
+.nav-btn.active{background:var(--bg3);border-color:var(--border2);color:var(--accent)}
+.sidebar-footer{margin-top:auto;padding:14px 18px;border-top:1px solid var(--border)}
+.score-legend{font-size:11px;color:var(--text3);line-height:1.8}
+.score-legend strong{color:var(--text2);font-weight:500}
+
+/* ── MAIN ── */
+.main{display:flex;flex-direction:column;overflow:hidden;min-height:100vh}
+.topbar{background:var(--bg2);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.topbar-title{font-size:15px;font-weight:500}
+.topbar-sub{font-size:11px;color:var(--text3);font-family:var(--mono);margin-top:1px}
+.stats-bar{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--border);flex-shrink:0}
+.stat{padding:14px 20px;border-right:1px solid var(--border);display:flex;flex-direction:column;gap:3px}
+.stat:last-child{border-right:none}
+.stat-val{font-size:22px;font-weight:600;font-family:var(--mono)}
+.stat-label{font-size:11px;color:var(--text3)}
+.stat-p0 .stat-val{color:var(--p0-text)}.stat-p1 .stat-val{color:var(--p1-text)}.stat-p2 .stat-val{color:var(--p2-badge)}.stat-p3 .stat-val{color:var(--text3)}
+.queue-header{padding:12px 24px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--border);flex-shrink:0}
+.queue-count{font-family:var(--mono);font-size:12px;color:var(--text3)}
+.search-input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 10px;color:var(--text);font-family:var(--font);font-size:12px;width:200px;outline:none}
+.search-input:focus{border-color:var(--border2)}
+.search-input::placeholder{color:var(--text3)}
+.sort-select{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:6px 8px;color:var(--text2);font-family:var(--font);font-size:12px;outline:none;cursor:pointer}
+.queue{flex:1;overflow-y:auto;padding:12px 24px}
+.queue::-webkit-scrollbar{width:4px}
+.queue::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* ── TICKET CARD ── */
+.ticket{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:6px;cursor:pointer;transition:border-color .15s;display:grid;grid-template-columns:36px 1fr auto;gap:10px;align-items:start}
+.ticket:hover{border-color:var(--border2)}
+.ticket.selected{border-color:var(--accent)}
+.ticket.tier-p0{border-left:3px solid var(--p0-badge)}.ticket.tier-p1{border-left:3px solid var(--p1-badge)}.ticket.tier-p2{border-left:3px solid var(--p2-badge)}.ticket.tier-p3{border-left:3px solid var(--p3-badge)}
+.score-ring{width:36px;height:36px;position:relative;flex-shrink:0}
+.score-ring svg{position:absolute;top:0;left:0;transform:rotate(-90deg)}
+.score-ring-val{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-family:var(--mono);font-size:10px;font-weight:500}
+.ticket-body{min-width:0}
+.ticket-top{display:flex;align-items:center;gap:8px;margin-bottom:5px;flex-wrap:wrap}
+.ticket-id{font-family:var(--mono);font-size:11px;color:var(--text3)}
+.badge{font-size:10px;font-family:var(--mono);font-weight:500;padding:2px 7px;border-radius:4px;white-space:nowrap}
+.badge-p0{background:var(--p0-bg);color:var(--p0-text);border:1px solid var(--p0-border)}
+.badge-p1{background:var(--p1-bg);color:var(--p1-text);border:1px solid var(--p1-border)}
+.badge-p2{background:var(--p2-bg);color:var(--p2-text);border:1px solid var(--p2-border)}
+.badge-p3{background:var(--p3-bg);color:var(--p3-text);border:1px solid var(--p3-border)}
+.badge-cat{background:var(--bg3);color:var(--text2);border:1px solid var(--border);text-transform:uppercase;letter-spacing:.04em}
+.badge-priority-high{background:rgba(255,68,68,.1);color:#ff8888;border:1px solid rgba(255,68,68,.2)}
+.badge-priority-medium{background:rgba(255,136,0,.1);color:#ffaa44;border:1px solid rgba(255,136,0,.2)}
+.badge-priority-low{background:rgba(100,100,130,.15);color:var(--text3);border:1px solid var(--border)}
+.ticket-merchant{font-size:13px;font-weight:500;color:var(--text);margin-bottom:3px}
+.ticket-meta{font-size:11px;color:var(--text3);display:flex;gap:12px;flex-wrap:wrap}
+.ticket-right{text-align:right;flex-shrink:0}
+.agent-chip{display:inline-flex;align-items:center;gap:5px;background:var(--bg3);border:1px solid var(--border);border-radius:12px;padding:3px 8px 3px 4px;font-size:11px;color:var(--text2)}
+.agent-chip .av{width:16px;height:16px;border-radius:50%;font-size:8px;font-weight:600;display:flex;align-items:center;justify-content:center;font-family:var(--mono)}
+.sla-indicator{font-size:10px;font-family:var(--mono)}
+.sla-breached{color:var(--p0-text)}.sla-warn{color:var(--p1-text)}.sla-ok{color:var(--text3)}
+
+/* ── DETAIL PANEL ── */
+.detail-panel{position:fixed;right:0;top:0;bottom:0;width:360px;background:var(--bg2);border-left:1px solid var(--border);overflow-y:auto;transform:translateX(100%);transition:transform .2s ease;z-index:100}
+.detail-panel.open{transform:translateX(0)}
+.detail-header{padding:16px 18px;border-bottom:1px solid var(--border);display:flex;align-items:flex-start;justify-content:space-between;position:sticky;top:0;background:var(--bg2);z-index:1}
+.detail-close{background:none;border:none;color:var(--text3);cursor:pointer;font-size:18px;padding:0;line-height:1}
+.detail-body{padding:16px 18px}
+.detail-section{margin-bottom:20px}
+.detail-section-label{font-size:10px;color:var(--text3);font-family:var(--mono);letter-spacing:.1em;text-transform:uppercase;margin-bottom:10px}
+.score-breakdown{display:flex;flex-direction:column;gap:8px}
+.score-row-d{display:flex;align-items:center;gap:8px}
+.score-row-label{font-size:12px;color:var(--text2);width:110px;flex-shrink:0}
+.score-row-bar{flex:1;height:4px;background:var(--bg3);border-radius:2px;overflow:hidden}
+.score-row-fill{height:100%;border-radius:2px;transition:width .3s}
+.score-row-val{font-family:var(--mono);font-size:11px;color:var(--text3);width:28px;text-align:right;flex-shrink:0}
+.detail-field{display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;border-bottom:1px solid var(--border)}
+.detail-field:last-child{border-bottom:none}
+.detail-field-label{font-size:12px;color:var(--text3)}
+.detail-field-val{font-size:12px;color:var(--text);font-family:var(--mono);text-align:right;max-width:200px;word-break:break-word}
+.total-score-display{background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:14px;text-align:center;margin-bottom:16px}
+.total-score-num{font-family:var(--mono);font-size:36px;font-weight:600}
+.total-score-label{font-size:11px;color:var(--text3);margin-top:2px}
+.total-score-tier{font-size:12px;font-family:var(--mono);margin-top:6px}
+.empty{text-align:center;padding:60px 24px;color:var(--text3);font-size:13px}
+
+/* ── HOTBAR ── */
+.hotbar{background:rgba(255,68,68,.06);border-top:1px solid var(--p0-border);padding:8px 24px;display:flex;align-items:center;gap:10px;font-size:12px;color:var(--p0-text);flex-shrink:0}
+.hotbar-dot{width:7px;height:7px;border-radius:50%;background:var(--p0-badge);animation:pulse 1.5s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+/* ── REFRESH BAR ── */
+.refresh-bar{background:var(--bg2);border-bottom:1px solid var(--border);padding:6px 24px;display:flex;align-items:center;justify-content:space-between;font-size:11px;color:var(--text3);font-family:var(--mono);flex-shrink:0}
+.refresh-status{display:flex;align-items:center;gap:8px}
+.refresh-dot{width:6px;height:6px;border-radius:50%}
+.refresh-dot.ok{background:var(--green)}
+.refresh-dot.err{background:var(--red)}
+.refresh-dot.loading{background:var(--p1-badge);animation:pulse 1s infinite}
+.btn-refresh{background:var(--bg3);border:1px solid var(--border);border-radius:4px;padding:3px 10px;color:var(--text2);font-family:var(--mono);font-size:11px;cursor:pointer;transition:all .15s}
+.btn-refresh:hover{border-color:var(--border2);color:var(--text)}
+
+/* ── SETTINGS PANEL ── */
+.settings-panel{display:none;flex:1;overflow-y:auto;padding:20px 24px;flex-direction:column;gap:24px}
+.settings-panel.visible{display:flex}
+.settings-section{background:var(--bg2);border:1px solid var(--border);border-radius:8px;overflow:hidden}
+.settings-section-header{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.settings-section-title{font-size:13px;font-weight:500;color:var(--text)}
+.settings-section-max{font-size:11px;font-family:var(--mono);color:var(--text3)}
+.settings-rows{padding:4px 0}
+.settings-row{padding:10px 16px;display:grid;grid-template-columns:160px 1fr 44px;align-items:center;gap:12px;border-bottom:1px solid var(--border)}
+.settings-row:last-child{border-bottom:none}
+.settings-row-label{font-size:12px;color:var(--text2)}
+.settings-row-sub{font-size:10px;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+.settings-slider{width:100%;accent-color:var(--accent)}
+.settings-val{font-family:var(--mono);font-size:13px;font-weight:500;color:var(--text);text-align:right}
+.settings-changed{color:var(--accent)}
+.tier-thresholds{padding:12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.thresh-row{display:flex;flex-direction:column;gap:6px}
+.thresh-label{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.thresh-input-wrap{display:flex;align-items:center;gap:8px}
+.thresh-input{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:13px;width:64px;outline:none;text-align:center}
+.thresh-input:focus{border-color:var(--accent)}
+.thresh-badge{font-size:10px;padding:2px 6px;border-radius:4px;font-family:var(--mono)}
+.settings-footer{display:flex;gap:10px;padding-top:4px}
+.btn-reset{background:transparent;border:1px solid var(--border);border-radius:6px;padding:8px 16px;color:var(--text2);font-family:var(--font);font-size:12px;cursor:pointer;transition:all .15s}
+.btn-reset:hover{border-color:var(--border2);color:var(--text)}
+.btn-apply{background:var(--accent);border:1px solid var(--accent);border-radius:6px;padding:8px 16px;color:#fff;font-family:var(--font);font-size:12px;cursor:pointer;font-weight:500;transition:opacity .15s}
+.btn-apply:hover{opacity:.85}
+.sla-thresh-grid{padding:12px 16px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px}
+
+/* ── DATA SOURCE SECTION ── */
+.ds-rows{padding:12px 16px;display:flex;flex-direction:column;gap:10px}
+.ds-row{display:flex;flex-direction:column;gap:4px}
+.ds-label{font-size:11px;color:var(--text3);font-family:var(--mono)}
+.ds-input{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:7px 10px;color:var(--text);font-family:var(--mono);font-size:12px;width:100%;outline:none}
+.ds-input:focus{border-color:var(--accent)}
+.ds-hint{font-size:10px;color:var(--text3);margin-top:2px}
+.ds-footer{padding:0 16px 12px;display:flex;gap:8px;align-items:center}
+.btn-test{background:transparent;border:1px solid var(--border);border-radius:6px;padding:7px 14px;color:var(--text2);font-family:var(--font);font-size:12px;cursor:pointer;transition:all .15s}
+.btn-test:hover{border-color:var(--border2);color:var(--text)}
+.btn-save-ds{background:var(--green);border:1px solid var(--green);border-radius:6px;padding:7px 14px;color:#fff;font-family:var(--font);font-size:12px;cursor:pointer;font-weight:500}
+.ds-msg{font-size:11px;font-family:var(--mono)}
+.ds-msg.ok{color:var(--green)}.ds-msg.err{color:var(--red)}
+
+/* ── DASHBOARD ── */
+.dashboard-panel{display:none;flex:1;overflow-y:auto;padding:20px 24px;flex-direction:column;gap:20px}
+.dashboard-panel.visible{display:flex}
+.dash-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.dash-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:16px 18px;display:flex;flex-direction:column;gap:12px}
+.dash-card.full{grid-column:1/-1}
+.dash-card-title{font-size:12px;font-weight:500;color:var(--text)}
+.dash-card-sub{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:2px}
+.dash-canvas-wrap{position:relative;width:100%;height:220px}
+.dash-canvas-wrap.tall{height:260px}
+.dash-kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+.dash-kpi{background:var(--bg3);border:1px solid var(--border);border-radius:6px;padding:12px 14px}
+.dash-kpi-val{font-family:var(--mono);font-size:22px;font-weight:600}
+.dash-kpi-label{font-size:10px;color:var(--text3);margin-top:3px}
+.dash-note{font-size:10px;color:var(--text3);font-family:var(--mono);margin-top:4px}
+
+/* ── FINANCIAL RISK ── */
+.fin-tier-critical{background:rgba(255,68,68,.12);border:1px solid rgba(255,68,68,.3);color:#ff6b6b;border-radius:6px;padding:7px 10px;font-size:11px;font-family:var(--mono);font-weight:500}
+.fin-tier-high{background:rgba(255,136,0,.12);border:1px solid rgba(255,136,0,.3);color:#ffa940;border-radius:6px;padding:7px 10px;font-size:11px;font-family:var(--mono);font-weight:500}
+.fin-tier-medium{background:rgba(34,136,255,.1);border:1px solid rgba(34,136,255,.2);color:#4da6ff;border-radius:6px;padding:7px 10px;font-size:11px;font-family:var(--mono);font-weight:500}
+.fin-tier-none{background:var(--bg3);border:1px solid var(--border);color:var(--text3);border-radius:6px;padding:7px 10px;font-size:11px;font-family:var(--mono)}
+
+/* ── COLLAPSIBLE ── */
+.collapsible-label{display:flex;align-items:center;justify-content:space-between;width:100%;background:none;border:none;cursor:pointer;padding:0;margin-bottom:0}
+.collapsible-label:hover .sidebar-label{color:var(--text2)}
+.collapse-chevron{font-size:16px;color:var(--text2);transition:transform .2s;display:inline-block}
+.collapse-chevron.closed{transform:rotate(-90deg)}
+.collapsible-body{overflow:hidden;transition:max-height .25s ease, opacity .2s ease;max-height:600px;opacity:1}
+.collapsible-body.closed{max-height:0;opacity:0;pointer-events:none}
+
+/* ── COLUMN MAPPING ── */
+.col-map-grid{padding:12px 16px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.col-map-row{display:flex;flex-direction:column;gap:4px}
+.col-map-label{font-size:10px;color:var(--text3);font-family:var(--mono)}
+.col-map-select{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:5px 8px;color:var(--text);font-family:var(--mono);font-size:11px;outline:none;cursor:pointer;width:100%}
+.col-map-select:focus{border-color:var(--accent)}
+</style>
+</head>
+<body>
+<div class="layout">
+<aside class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo"><span>nelo</span> / ops triage</div>
+    <div class="tagline">classifier v2.0 · live queue</div>
+  </div>
+  <div class="sidebar-section" style="display:flex;flex-direction:column;gap:4px;padding-bottom:4px">
+    <button class="nav-btn active" id="dashboard-nav-btn" onclick="showPanel('dashboard')">▦ Dashboard</button>
+    <button class="nav-btn" id="queue-nav-btn" onclick="showPanel('queue')">☰ Triage — live queue</button>
+  </div>
+  <hr class="sidebar-divider">
+  <div class="sidebar-section">
+    <button class="collapsible-label" onclick="toggleCollapse('tier-filter-body','chevron-tier')">
+      <span class="sidebar-label" style="margin-bottom:0">Filter by tier</span>
+      <span class="collapse-chevron closed" id="chevron-tier">▾</span>
+    </button>
+    <div id="tier-filter-body" class="collapsible-body closed tier-filter" style="margin-top:10px">
+      <button class="tier-btn active" onclick="setTier('all')" id="btn-all">
+        <span style="display:flex;align-items:center"><span class="tier-dot" style="background:var(--accent)"></span>All tickets</span>
+        <span class="tier-count" id="cnt-all">—</span>
+      </button>
+      <button class="tier-btn" onclick="setTier('P0')" id="btn-P0">
+        <span style="display:flex;align-items:center"><span class="tier-dot t-p0"></span>P0 — escalate now</span>
+        <span class="tier-count" id="cnt-P0">—</span>
+      </button>
+      <button class="tier-btn" onclick="setTier('P1')" id="btn-P1">
+        <span style="display:flex;align-items:center"><span class="tier-dot t-p1"></span>P1 — urgent</span>
+        <span class="tier-count" id="cnt-P1">—</span>
+      </button>
+      <button class="tier-btn" onclick="setTier('P2')" id="btn-P2">
+        <span style="display:flex;align-items:center"><span class="tier-dot t-p2"></span>P2 — normal</span>
+        <span class="tier-count" id="cnt-P2">—</span>
+      </button>
+      <button class="tier-btn" onclick="setTier('P3')" id="btn-P3">
+        <span style="display:flex;align-items:center"><span class="tier-dot t-p3"></span>P3 — low</span>
+        <span class="tier-count" id="cnt-P3">—</span>
+      </button>
+    </div>
+  </div>
+  <hr class="sidebar-divider">
+  <div class="sidebar-section">
+    <button class="collapsible-label" onclick="toggleCollapse('agent-list','chevron-agent')">
+      <span class="sidebar-label" style="margin-bottom:0">Filter by agent</span>
+      <span class="collapse-chevron closed" id="chevron-agent">▾</span>
+    </button>
+    <div id="agent-list" class="collapsible-body closed agent-list" style="margin-top:10px"></div>
+  </div>
+  <hr class="sidebar-divider">
+  <div class="sidebar-section">
+    <button class="collapsible-label" onclick="toggleCollapse('status-filter','chevron-status')">
+      <span class="sidebar-label" style="margin-bottom:0">Filter by status</span>
+      <span class="collapse-chevron closed" id="chevron-status">▾</span>
+    </button>
+    <div class="collapsible-body closed tier-filter" id="status-filter" style="margin-top:10px"></div>
+  </div>
+  <hr class="sidebar-divider">
+  <div class="sidebar-section" style="display:flex;flex-direction:column;gap:4px">
+    <button class="nav-btn" id="settings-nav-btn" onclick="showPanel('scoring')">⚙ Scoring engine</button>
+    <button class="nav-btn" id="datasource-nav-btn" onclick="showPanel('datasource')">⛁ Data source</button>
+  </div>
+  <div class="sidebar-footer">
+    <div class="score-legend" id="score-legend-text">
+      <strong>Score formula</strong><br>
+      Priority &nbsp;&nbsp;&nbsp;0–<span id="leg-pri">30</span> pts<br>
+      Category &nbsp;&nbsp;0–<span id="leg-cat">30</span> pts<br>
+      Size &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;0–<span id="leg-gmv">25</span> pts<br>
+      SLA age &nbsp;&nbsp;&nbsp;0–<span id="leg-sla">15</span> pts<br>
+      <br>
+      P0 ≥<span id="leg-t0">75</span> · P1 ≥<span id="leg-t1">55</span><br>
+      P2 ≥<span id="leg-t2">35</span> · P3 &lt;<span id="leg-t2b">35</span>
+    </div>
+  </div>
+</aside>
+
+<div class="main">
+  <div class="topbar">
+    <div>
+      <div class="topbar-title" id="topbar-title">Open ticket queue</div>
+      <div class="topbar-sub" id="topbar-sub">Loading data from Google Sheets…</div>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center" id="queue-controls">
+      <input class="search-input" type="text" placeholder="Search ticket or merchant…" oninput="setSearch(this.value)">
+      <select class="sort-select" onchange="setSort(this.value)">
+        <option value="score">Sort: triage score</option>
+        <option value="hrs">Sort: response time</option>
+        <option value="gmv">Sort: merchant GMV</option>
+        <option value="status">Sort: status · in progress → open → resolved</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="refresh-bar">
+    <div class="refresh-status">
+      <div class="refresh-dot loading" id="refresh-dot"></div>
+      <span id="refresh-msg">Connecting to Google Sheets…</span>
+    </div>
+    <div style="display:flex;gap:8px;align-items:center">
+      <span id="refresh-next" style="color:var(--text3)"></span>
+      <button class="btn-refresh" onclick="loadData()">↺ Refresh now</button>
+    </div>
+  </div>
+
+  <div class="stats-bar">
+    <div class="stat stat-p0"><div class="stat-val" id="s-p0">—</div><div class="stat-label">P0 escalate now</div></div>
+    <div class="stat stat-p1"><div class="stat-val" id="s-p1">—</div><div class="stat-label">P1 urgent</div></div>
+    <div class="stat stat-p2"><div class="stat-val" id="s-p2">—</div><div class="stat-label">P2 normal</div></div>
+    <div class="stat stat-p3"><div class="stat-val" id="s-p3">—</div><div class="stat-label">P3 low</div></div>
+  </div>
+
+  <div class="queue-header">
+    <span class="queue-count" id="queue-count">— tickets</span>
+  </div>
+
+  <!-- QUEUE VIEW -->
+  <div class="queue" id="queue">
+    <div class="empty"><div style="font-size:28px;margin-bottom:8px">◎</div>Loading tickets…</div>
+  </div>
+
+  <!-- SCORING SETTINGS VIEW -->
+  <div class="settings-panel" id="settings-panel">
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Priority weights</div></div>
+        <div class="settings-section-max">max <span id="sm-pri">30</span> pts</div>
+      </div>
+      <div class="settings-rows">
+        <div class="settings-row">
+          <div><div class="settings-row-label">High priority</div><div class="settings-row-sub">default: 30</div></div>
+          <input type="range" class="settings-slider" min="0" max="30" step="1" value="30" id="s-pri-high" oninput="onSlider('pri-high',this.value)">
+          <div class="settings-val" id="sv-pri-high">30</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Medium priority</div><div class="settings-row-sub">default: 18</div></div>
+          <input type="range" class="settings-slider" min="0" max="30" step="1" value="18" id="s-pri-med" oninput="onSlider('pri-med',this.value)">
+          <div class="settings-val" id="sv-pri-med">18</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Low priority</div><div class="settings-row-sub">default: 8</div></div>
+          <input type="range" class="settings-slider" min="0" max="30" step="1" value="8" id="s-pri-low" oninput="onSlider('pri-low',this.value)">
+          <div class="settings-val" id="sv-pri-low">8</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Category risk scores</div></div>
+        <div class="settings-section-max">max <span id="sm-cat">30</span> pts</div>
+      </div>
+      <div class="settings-rows" id="cat-rows">
+        <!-- populated dynamically from data -->
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Merchant size weights</div></div>
+        <div class="settings-section-max">max <span id="sm-gmv">25</span> pts</div>
+      </div>
+      <div class="settings-rows">
+        <div class="settings-row">
+          <div><div class="settings-row-label">&gt;750K MXN/mo</div><div class="settings-row-sub">default: 25</div></div>
+          <input type="range" class="settings-slider" min="0" max="25" step="1" value="25" id="s-size->750k" oninput="onSlider('size->750k',this.value)">
+          <div class="settings-val" id="sv-size->750k">25</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">500–750K MXN/mo</div><div class="settings-row-sub">default: 20</div></div>
+          <input type="range" class="settings-slider" min="0" max="25" step="1" value="20" id="s-size-500-750k" oninput="onSlider('size-500-750k',this.value)">
+          <div class="settings-val" id="sv-size-500-750k">20</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">250–500K MXN/mo</div><div class="settings-row-sub">default: 15</div></div>
+          <input type="range" class="settings-slider" min="0" max="25" step="1" value="15" id="s-size-250-500k" oninput="onSlider('size-250-500k',this.value)">
+          <div class="settings-val" id="sv-size-250-500k">15</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">100–250K MXN/mo</div><div class="settings-row-sub">default: 8</div></div>
+          <input type="range" class="settings-slider" min="0" max="25" step="1" value="8" id="s-size-100-250k" oninput="onSlider('size-100-250k',this.value)">
+          <div class="settings-val" id="sv-size-100-250k">8</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">&lt;100K MXN/mo</div><div class="settings-row-sub">default: 3</div></div>
+          <input type="range" class="settings-slider" min="0" max="25" step="1" value="3" id="s-size-<100k" oninput="onSlider('size-<100k',this.value)">
+          <div class="settings-val" id="sv-size-<100k">3</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">#N/A (unknown)</div><div class="settings-row-sub">default: 0</div></div>
+          <input type="range" class="settings-slider" min="0" max="25" step="1" value="0" id="s-size-#n/a" oninput="onSlider('size-#n/a',this.value)">
+          <div class="settings-val" id="sv-size-#n/a">0</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">SLA urgency weights</div></div>
+        <div class="settings-section-max">max <span id="sm-sla">15</span> pts</div>
+      </div>
+      <div class="settings-rows">
+        <div class="settings-row">
+          <div><div class="settings-row-label">Breached 2×+</div><div class="settings-row-sub">default: 15</div></div>
+          <input type="range" class="settings-slider" min="0" max="15" step="1" value="15" id="s-sla-2x" oninput="onSlider('sla-2x',this.value)">
+          <div class="settings-val" id="sv-sla-2x">15</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Breached 1–2×</div><div class="settings-row-sub">default: 12</div></div>
+          <input type="range" class="settings-slider" min="0" max="15" step="1" value="12" id="s-sla-1x" oninput="onSlider('sla-1x',this.value)">
+          <div class="settings-val" id="sv-sla-1x">12</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">75–100% of window</div><div class="settings-row-sub">default: 8</div></div>
+          <input type="range" class="settings-slider" min="0" max="15" step="1" value="8" id="s-sla-75" oninput="onSlider('sla-75',this.value)">
+          <div class="settings-val" id="sv-sla-75">8</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">50–75% of window</div><div class="settings-row-sub">default: 4</div></div>
+          <input type="range" class="settings-slider" min="0" max="15" step="1" value="4" id="s-sla-50" oninput="onSlider('sla-50',this.value)">
+          <div class="settings-val" id="sv-sla-50">4</div>
+        </div>
+        <div class="settings-row">
+          <div><div class="settings-row-label">Under 50% of window</div><div class="settings-row-sub">default: 1</div></div>
+          <input type="range" class="settings-slider" min="0" max="15" step="1" value="1" id="s-sla-0" oninput="onSlider('sla-0',this.value)">
+          <div class="settings-val" id="sv-sla-0">1</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Tier thresholds</div></div>
+        <div class="settings-section-max">score cutoffs</div>
+      </div>
+      <div class="tier-thresholds">
+        <div class="thresh-row">
+          <div class="thresh-label"><span class="thresh-badge badge-p0">P0</span> escalate now ≥</div>
+          <div class="thresh-input-wrap"><input type="number" class="thresh-input" id="t-p0" value="75" min="1" max="200" oninput="onThresh()"></div>
+        </div>
+        <div class="thresh-row">
+          <div class="thresh-label"><span class="thresh-badge badge-p1">P1</span> urgent ≥</div>
+          <div class="thresh-input-wrap"><input type="number" class="thresh-input" id="t-p1" value="55" min="1" max="200" oninput="onThresh()"></div>
+        </div>
+        <div class="thresh-row">
+          <div class="thresh-label"><span class="thresh-badge badge-p2">P2</span> normal ≥</div>
+          <div class="thresh-input-wrap"><input type="number" class="thresh-input" id="t-p2" value="35" min="1" max="200" oninput="onThresh()"></div>
+        </div>
+        <div class="thresh-row">
+          <div class="thresh-label"><span class="thresh-badge badge-p3">P3</span> low &lt;</div>
+          <div class="thresh-input-wrap">
+            <input type="number" class="thresh-input" id="t-p3" value="35" disabled style="opacity:.4">
+            <span style="font-size:10px;color:var(--text3)">(auto)</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">SLA response thresholds</div></div>
+        <div class="settings-section-max">hours per priority</div>
+      </div>
+      <div class="sla-thresh-grid">
+        <div class="thresh-row">
+          <div class="thresh-label">High (hrs)</div>
+          <input type="number" class="thresh-input" id="sla-high" value="4" min="1" max="168" oninput="onThresh()" style="width:56px">
+        </div>
+        <div class="thresh-row">
+          <div class="thresh-label">Medium (hrs)</div>
+          <input type="number" class="thresh-input" id="sla-med" value="8" min="1" max="168" oninput="onThresh()" style="width:56px">
+        </div>
+        <div class="thresh-row">
+          <div class="thresh-label">Low (hrs)</div>
+          <input type="number" class="thresh-input" id="sla-low" value="24" min="1" max="168" oninput="onThresh()" style="width:56px">
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-footer">
+      <button class="btn-reset" onclick="resetSettings()">Reset to defaults</button>
+      <button class="btn-apply" onclick="applyAndClose()">Apply & view queue →</button>
+    </div>
+  </div><!-- /settings-panel -->
+
+  <!-- DATA SOURCE SETTINGS VIEW -->
+  <div class="settings-panel" id="datasource-panel">
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Google Sheets connection</div></div>
+      </div>
+      <div class="ds-rows">
+        <div class="ds-row">
+          <div class="ds-label">SPREADSHEET ID</div>
+          <input type="text" class="ds-input" id="ds-sheet-id" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+          <div class="ds-hint">Found in the sheet URL: docs.google.com/spreadsheets/d/<strong>SHEET_ID</strong>/edit</div>
+        </div>
+        <div class="ds-row">
+          <div class="ds-label">API KEY</div>
+          <input type="password" class="ds-input" id="ds-api-key" placeholder="AIza…">
+          <div class="ds-hint">Google Cloud Console → APIs & Services → Credentials</div>
+        </div>
+        <div class="ds-row">
+          <div class="ds-label">AUTO-REFRESH INTERVAL (minutes, 0 = off)</div>
+          <input type="number" class="ds-input" id="ds-refresh" value="5" min="0" max="60" style="width:80px">
+        </div>
+      </div>
+      <div class="ds-footer">
+        <button class="btn-test" onclick="testConnection()">Test connection</button>
+        <button class="btn-save-ds" onclick="saveDataSource()">Save & reload data</button>
+        <span class="ds-msg" id="ds-msg"></span>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Tab names</div></div>
+        <div class="settings-section-max">must match exactly</div>
+      </div>
+      <div class="ds-rows">
+        <div class="ds-row">
+          <div class="ds-label">TICKETS TAB NAME</div>
+          <input type="text" class="ds-input" id="ds-tab-tickets" value="Tickets" style="width:160px">
+        </div>
+        <div class="ds-row">
+          <div class="ds-label">MERCHANTS TAB NAME</div>
+          <input type="text" class="ds-input" id="ds-tab-merchants" value="Merchants" style="width:160px">
+        </div>
+        <div class="ds-row">
+          <div class="ds-label">AGENTS TAB NAME</div>
+          <input type="text" class="ds-input" id="ds-tab-agents" value="Agents" style="width:160px">
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Column mapping — Tickets tab</div></div>
+        <div class="settings-section-max" id="col-ticket-headers-info">auto-detected</div>
+      </div>
+      <div class="col-map-grid" id="col-map-tickets">
+        <div style="padding:12px 16px;color:var(--text3);font-size:12px;grid-column:1/-1">Load data first to auto-detect columns.</div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Column mapping — Merchants tab</div></div>
+      </div>
+      <div class="col-map-grid" id="col-map-merchants">
+        <div style="padding:12px 16px;color:var(--text3);font-size:12px;grid-column:1/-1">Load data first to auto-detect columns.</div>
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="settings-section-header">
+        <div><div class="settings-section-title">Column mapping — Agents tab</div></div>
+      </div>
+      <div class="col-map-grid" id="col-map-agents">
+        <div style="padding:12px 16px;color:var(--text3);font-size:12px;grid-column:1/-1">Load data first to auto-detect columns.</div>
+      </div>
+    </div>
+
+    <div class="settings-footer">
+      <button class="btn-apply" onclick="applyAndClose()">← Back to queue</button>
+    </div>
+  </div><!-- /datasource-panel -->
+
+  <!-- DASHBOARD VIEW -->
+  <div class="dashboard-panel" id="dashboard-panel">
+
+    <!-- KPI row -->
+    <div class="dash-kpi-row" style="grid-template-columns:repeat(5,1fr)">
+      <div class="dash-kpi"><div class="dash-kpi-val" id="dk-total">—</div><div class="dash-kpi-label">Total tickets</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-val" style="color:var(--p0-text)" id="dk-breach">—</div><div class="dash-kpi-label">SLA breached</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-val" style="color:var(--p1-text)" id="dk-breach-rate">—</div><div class="dash-kpi-label">Breach rate</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-val" style="color:var(--p2-badge)" id="dk-avg-hrs">—</div><div class="dash-kpi-label">Avg response time</div></div>
+      <div class="dash-kpi"><div class="dash-kpi-val" style="color:var(--p1-text)" id="dk-backlog">—</div><div class="dash-kpi-label">Backlog (open + in progress)</div></div>
+    </div>
+
+    <!-- Hot Sale watch — Zero Blind Spots threshold tiles -->
+    <div class="dash-card full">
+      <div>
+        <div class="dash-card-title">Hot Sale watch — known failure modes</div>
+        <div class="dash-card-sub">the three Zero Blind Spots thresholds · checked every 2 hrs on the war-room rota · full-period rates from the connected sheet</div>
+      </div>
+      <div class="dash-kpi-row" style="grid-template-columns:repeat(3,1fr);margin-top:10px">
+        <div class="dash-kpi"><div class="dash-kpi-val" id="hw-oxxo">—</div><div class="dash-kpi-label">OXXO exception rate <span style="color:var(--text3)">· amber ≥6% · red &gt;10%</span></div></div>
+        <div class="dash-kpi"><div class="dash-kpi-val" id="hw-pending">—</div><div class="dash-kpi-label">Pending rate <span style="color:var(--text3)">· amber ≥5% · red &gt;15%</span></div></div>
+        <div class="dash-kpi"><div class="dash-kpi-val" id="hw-pivol">—</div><div class="dash-kpi-label">Payment-issue volume vs baseline <span style="color:var(--text3)">· amber ≥1.3× · red &gt;1.5×</span></div></div>
+      </div>
+    </div>
+
+    <!-- Chart 1: Tickets per week + breach rate -->
+    <div class="dash-card full">
+      <div>
+        <div class="dash-card-title">Tickets per week &amp; SLA breach rate</div>
+        <div class="dash-card-sub">bars = ticket volume · line = % breached SLA · updates with threshold changes</div>
+      </div>
+      <div class="dash-canvas-wrap tall"><canvas id="chart-weekly"></canvas></div>
+    </div>
+
+    <div class="dash-grid">
+      <!-- Chart 2: SLA breach rate by category -->
+      <div class="dash-card">
+        <div>
+          <div class="dash-card-title">SLA breach rate by category</div>
+          <div class="dash-card-sub">% of tickets that breached SLA per issue type</div>
+        </div>
+        <div class="dash-canvas-wrap"><canvas id="chart-category"></canvas></div>
+      </div>
+
+      <!-- Chart 3: Response time distribution -->
+      <div class="dash-card">
+        <div>
+          <div class="dash-card-title">Response time distribution</div>
+          <div class="dash-card-sub">green = within SLA · red = breached · buckets in hours</div>
+        </div>
+        <div class="dash-canvas-wrap"><canvas id="chart-dist"></canvas></div>
+      </div>
+    </div>
+
+    <div class="dash-grid">
+      <!-- Chart 4: Tickets by priority split by SLA breach -->
+      <div class="dash-card">
+        <div>
+          <div class="dash-card-title">Ticket volume by priority &amp; SLA status</div>
+          <div class="dash-card-sub">stacked by within SLA vs breached · updates with threshold changes</div>
+        </div>
+        <div class="dash-canvas-wrap"><canvas id="chart-priority"></canvas></div>
+      </div>
+
+      <!-- Chart 5: Avg response time by priority -->
+      <div class="dash-card">
+        <div>
+          <div class="dash-card-title">Average response time by priority</div>
+          <div class="dash-card-sub">bars = avg hours · line = SLA threshold · updates with threshold changes</div>
+        </div>
+        <div class="dash-canvas-wrap"><canvas id="chart-avgtime"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Chart 5: Open + in_progress tickets per agent -->
+    <div class="dash-card full">
+      <div>
+        <div class="dash-card-title">Ticket load by agent</div>
+        <div class="dash-card-sub">open and in-progress tickets per agent · sorted by total workload</div>
+      </div>
+      <div class="dash-canvas-wrap" style="height:240px"><canvas id="chart-agents"></canvas></div>
+    </div>
+
+    <!-- Chart 6: Financial exposure by merchant -->
+    <div class="dash-card full">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:8px">
+        <div>
+          <div class="dash-card-title">Financial exposure — cash at risk by merchant</div>
+          <div class="dash-card-sub">top 15 merchants by unreconciled variance · colored by risk tier · mirrors reconciliation engine logic</div>
+        </div>
+        <div style="display:flex;gap:8px;font-size:10px;font-family:var(--mono);align-items:center">
+          <span style="color:#ff6b6b">● CRITICAL</span>
+          <span style="color:#ffa940">● HIGH</span>
+          <span style="color:#4da6ff">● MEDIUM</span>
+          <span style="color:var(--text3);margin-left:4px">Total cash at risk: <strong id="dk-cash-risk" style="color:var(--text2)">—</strong></span>
+        </div>
+      </div>
+      <div class="dash-canvas-wrap" style="height:320px"><canvas id="chart-financial"></canvas></div>
+    </div>
+
+    <div class="dash-note" id="dash-note"></div>
+  </div><!-- /dashboard-panel -->
+
+  <div class="hotbar">
+    <div class="hotbar-dot"></div>
+    <span id="hotbar-msg">Hot Sale season · P0 queue is your critical path · scores update every refresh</span>
+  </div>
+</div>
+</div>
+
+<!-- DETAIL PANEL -->
+<div class="detail-panel" id="detail-panel">
+  <div class="detail-header">
+    <div>
+      <div style="font-size:13px;font-weight:500" id="d-id">—</div>
+      <div style="font-size:11px;color:var(--text3);margin-top:2px;font-family:var(--mono)" id="d-merchant">—</div>
+    </div>
+    <button class="detail-close" onclick="closeDetail()">✕</button>
+  </div>
+  <div class="detail-body">
+    <div class="total-score-display">
+      <div class="total-score-num" id="d-score">—</div>
+      <div class="total-score-label">triage score</div>
+      <div class="total-score-tier" id="d-tier">—</div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-label">Score breakdown</div>
+      <div class="score-breakdown">
+        <div class="score-row-d"><span class="score-row-label">Priority</span><div class="score-row-bar"><div class="score-row-fill" id="db-priority" style="background:#6c63ff"></div></div><span class="score-row-val" id="dv-priority">—</span></div>
+        <div class="score-row-d"><span class="score-row-label">Category risk</span><div class="score-row-bar"><div class="score-row-fill" id="db-cat" style="background:#ff6b6b"></div></div><span class="score-row-val" id="dv-cat">—</span></div>
+        <div class="score-row-d"><span class="score-row-label">Merchant size</span><div class="score-row-bar"><div class="score-row-fill" id="db-gmv" style="background:#ffa940"></div></div><span class="score-row-val" id="dv-gmv">—</span></div>
+        <div class="score-row-d"><span class="score-row-label">SLA urgency</span><div class="score-row-bar"><div class="score-row-fill" id="db-sla" style="background:#4da6ff"></div></div><span class="score-row-val" id="dv-sla">—</span></div>
+      </div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-label">Ticket details</div>
+      <div id="d-fields"></div>
+    </div>
+    <div class="detail-section" id="d-merchant-tickets-section">
+      <div class="detail-section-label">Other open tickets — same merchant</div>
+      <div id="d-merchant-tickets"></div>
+    </div>
+    <div class="detail-section" id="d-financial-section">
+      <div class="detail-section-label">Financial exposure</div>
+      <div id="d-financial-tier-badge" style="margin-bottom:10px"></div>
+      <div id="d-financial-fields"></div>
+    </div>
+    <div class="detail-section">
+      <div class="detail-section-label">Why this score?</div>
+      <div style="font-size:12px;color:var(--text2);line-height:1.7" id="d-rationale">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── CONFIG (persisted in localStorage) ──────────────────────────────────────
+const LS_KEY = 'nelo_triage_cfg';
+const LS_DS  = 'nelo_triage_ds';
+
+const DEFAULTS = {
+  'pri-high':30,'pri-med':18,'pri-low':8,
+  'gmv-max':25,
+  'sla-2x':15,'sla-1x':12,'sla-75':8,'sla-50':4,'sla-0':1,
+  'thresh-p0':75,'thresh-p1':55,'thresh-p2':35,
+  'sla-thresh-high':4,'sla-thresh-med':8,'sla-thresh-low':24
+};
+
+const DS_DEFAULTS = {
+  sheetId: '1VslEVHbGoV85GfkzksE3cuo4mQw0S8kNY80iUxvNIDE',
+  // SECURITY: no API key ships with this file. Create your own in Google Cloud
+  // Console (APIs & Services → Credentials → API key, restrict it to the Google
+  // Sheets API), then paste it once in "Data source settings" inside the app —
+  // it persists in localStorage. If a key was ever committed or shared from an
+  // earlier version of this file, regenerate it in Google Cloud Console.
+  apiKey:  '',
+  refreshMin: 5,
+  tabTickets: 'Tickets',
+  tabMerchants: 'Merchants',
+  tabAgents: 'Reconciliation',
+  // column map keys → actual header names in sheet
+  colMap: {
+    ticket_id: 'ticket_id',
+    ticket_merchant_id: 'merchant_id',
+    ticket_category: 'category',
+    ticket_type: 'category',
+    ticket_priority: 'priority',
+    ticket_agent_id: 'assigned_to',
+    ticket_hours: 'first_response_hours',
+    ticket_status: 'status',
+    ticket_sla_breach: 'sla breach',
+    merchant_id: 'merchant_id',
+    merchant_name: 'merchant_name',
+    merchant_gmv: 'monthly_gmv_mxn',
+    merchant_sector: 'category',
+    merchant_size: 'Size',
+    recon_merchant_id: 'merchant_id',
+    recon_settled: 'settled_amount_mxn',
+    recon_expected: 'expected_amount_mxn',
+    recon_status_check: 'status check',
+    recon_tx_status: 'status',
+    agent_id: 'assigned_to',
+    agent_name: 'assigned_to',
+    agent_team: 'Team',
+  }
+};
+
+// Category weights — dynamic (keys depend on data)
+const CAT_DEFAULTS = {
+  'payment_issue':30,'refund_request':14,'account_access':12,'delivery_delay':10,'other':6
+};
+
+const SIZE_BANDS = ['>750k','500-750k','250-500k','100-250k','<100k','#n/a'];
+const SIZE_DEFAULTS = {
+  'size->750k': 25,
+  'size-500-750k': 20,
+  'size-250-500k': 15,
+  'size-100-250k': 8,
+  'size-<100k': 3,
+  'size-#n/a': 0,
+};
+
+let cfg = Object.assign({}, DEFAULTS, SIZE_DEFAULTS, JSON.parse(localStorage.getItem(LS_KEY)||'{}'));
+let ds  = Object.assign({}, DS_DEFAULTS, JSON.parse(localStorage.getItem(LS_DS)||'{}'));
+ds.colMap = Object.assign({}, DS_DEFAULTS.colMap, ds.colMap || {});
+
+function normalizeSize(raw) {
+  return (raw || '').trim().toLowerCase();
+}
+function getSizeScore(raw) {
+  const key = 'size-' + normalizeSize(raw);
+  return cfg[key] !== undefined ? cfg[key] : 0;
+}
+
+function getCatWeight(type) {
+  const key = 'cat-' + normalizeType(type);
+  if (cfg[key] !== undefined) return cfg[key];
+  return CAT_DEFAULTS[normalizeType(type)] || 6;
+}
+function normalizeType(t) {
+  return (t||'').toLowerCase().replace(/\s+/g,'_');
+}
+
+// ── DATA STATE ────────────────────────────────────────────────────────────────
+let RAW = [];
+let RECON_RISK = {}; // merchant_id → { totalVariance, exceptionCount, worstVariance, tier }
+let RECON_STATS = { total: 0, pending: 0, oxxoTotal: 0, oxxoExc: 0 }; // Hot Sale watch tiles
+let TICKETS = [];
+let AGENTS_MAP = {};   // agent_id → { name, team, color }
+let MERCHANTS_MAP = {}; // merchant_id → { name, gmv, sector }
+let GMV_MAX = 1, GMV_MIN = 0;
+let KNOWN_TYPES = [];
+let lastLoaded = null;
+let refreshTimer = null;
+
+// Deterministic color palette for agents
+const PALETTE = ['#7f77dd','#1d9e75','#d85a30','#378add','#ba7517','#c259a8','#4da6ff','#ff6b6b'];
+let agentColorIdx = {};
+
+function agentColor(id) {
+  if (!agentColorIdx[id]) {
+    const keys = Object.keys(agentColorIdx);
+    agentColorIdx[id] = PALETTE[keys.length % PALETTE.length];
+  }
+  return agentColorIdx[id];
+}
+
+// ── GOOGLE SHEETS FETCH ───────────────────────────────────────────────────────
+function sheetsUrl(ranges) {
+  const base = `https://sheets.googleapis.com/v4/spreadsheets/${ds.sheetId}/values:batchGet`;
+  const params = new URLSearchParams({ key: ds.apiKey, majorDimension: 'ROWS' });
+  ranges.forEach(r => params.append('ranges', r));
+  return `${base}?${params}`;
+}
+
+function sheetToObjects(valueRange) {
+  if (!valueRange || !valueRange.values || valueRange.values.length < 2) return { headers: [], rows: [] };
+  const rawHeaders = valueRange.values[0].map(h => (h||'').trim());
+  const headers = rawHeaders.map(h => h.toLowerCase());
+  const rows = valueRange.values.slice(1).map(row => {
+    const obj = {};
+    headers.forEach((h, i) => { obj[h] = (row[i] || '').trim(); });
+    return obj;
+  });
+  return { headers, rows };
+}
+
+function getCol(obj, mappedKey) {
+  const colName = ds.colMap[mappedKey];
+  return obj[colName] || obj[colName?.toLowerCase()] || '';
+}
+
+async function loadData() {
+  setRefreshStatus('loading', 'Fetching from Google Sheets…');
+  try {
+    const url = sheetsUrl([
+      `${ds.tabTickets}!A:Z`,
+      `${ds.tabMerchants}!A:Z`,
+      `${ds.tabAgents}!A:Z`
+    ]);
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.json();
+      throw new Error(err.error?.message || `HTTP ${res.status}`);
+    }
+    const data = await res.json();
+    const [ticketRange, merchantRange, agentRange] = data.valueRanges;
+
+    parseSheets(ticketRange, merchantRange, agentRange);
+    lastLoaded = new Date();
+    setRefreshStatus('ok', `Last updated ${lastLoaded.toLocaleTimeString()}`);
+    scheduleRefresh();
+    initAgents();
+    initStatusFilter();
+    updateLegend();
+    updateSectionMaxes();
+    render();
+  } catch(e) {
+    setRefreshStatus('err', `Error: ${e.message}`);
+    if (RAW.length === 0) {
+      document.getElementById('queue').innerHTML = `<div class="empty"><div style="font-size:28px;margin-bottom:12px">⚠</div><strong style="color:var(--text2)">${e.message}</strong><br><br>Check your Sheet ID, API key, and that the sheet is set to "Anyone with the link can view".<br><br><button class="btn-apply" onclick="showPanel('datasource')" style="margin-top:8px">Open data source settings</button></div>`;
+    }
+  }
+}
+
+function normalizePriority(raw) {
+  const v = (raw || '').toString().trim().toLowerCase();
+  if (!v) return 'low';
+  // numeric
+  if (v === '1' || v === 'p1') return 'high';
+  if (v === '2' || v === 'p2') return 'medium';
+  if (v === '3' || v === 'p3') return 'low';
+  // english
+  if (v.includes('high') || v.includes('urgent') || v.includes('critical')) return 'high';
+  if (v.includes('med'))  return 'medium';
+  if (v.includes('low')  || v.includes('minor')) return 'low';
+  // spanish
+  if (v.includes('alta') || v.includes('alto') || v.includes('urgente')) return 'high';
+  if (v.includes('media') || v.includes('medio') || v.includes('normal')) return 'medium';
+  if (v.includes('baja') || v.includes('bajo'))  return 'low';
+  return 'low';
+}
+
+function parseSheets(ticketRange, merchantRange, reconRange) {
+  const { rows: ticketRows,   headers: tHeaders } = sheetToObjects(ticketRange);
+  const { rows: merchantRows, headers: mHeaders } = sheetToObjects(merchantRange);
+  const { rows: reconRows,    headers: rHeaders } = sheetToObjects(reconRange);
+
+  // Build merchants map from Merchants tab
+  MERCHANTS_MAP = {};
+  merchantRows.forEach(r => {
+    const id = getCol(r, 'merchant_id') || r[Object.keys(r)[0]];
+    if (!id) return;
+    MERCHANTS_MAP[id] = {
+      name:   getCol(r, 'merchant_name') || id,
+      gmv:    parseFloat((getCol(r, 'merchant_gmv') || '0').replace(/[,$,\s]/g,'')) || 0,
+      sector: getCol(r, 'merchant_sector') || '—',
+      size:   getCol(r, 'merchant_size')   || '—',
+    };
+  });
+
+  // Augment GMV from Reconciliation tab — sum settled_amount_mxn per merchant
+  const reconGMV = {};
+  reconRows.forEach(r => {
+    const mid = getCol(r, 'recon_merchant_id');
+    const amt = parseFloat((getCol(r, 'recon_settled') || '0').replace(/[,$\s]/g,'')) || 0;
+    if (mid && amt > 0) reconGMV[mid] = (reconGMV[mid] || 0) + amt;
+  });
+  // Use recon GMV where available (more accurate), fall back to merchant tab
+  Object.keys(MERCHANTS_MAP).forEach(id => {
+    if (reconGMV[id]) MERCHANTS_MAP[id].gmv = reconGMV[id];
+  });
+
+  // Agents come from tickets' assigned_to — no separate agents tab needed
+  agentColorIdx = {};
+  AGENTS_MAP = {};
+
+  // Parse tickets & join
+  RAW = ticketRows
+    .filter(r => Object.values(r).some(v => v))
+    .map(r => {
+      const merchantId = getCol(r, 'ticket_merchant_id');
+      const agentRaw   = getCol(r, 'ticket_agent_id') || 'unassigned';
+      const merchant   = MERCHANTS_MAP[merchantId] || { name: merchantId || '—', gmv: 0, sector: '—', size: '—' };
+      const slaBreach  = getCol(r, 'ticket_sla_breach');
+
+      // Ensure agent color is assigned
+      if (!AGENTS_MAP[agentRaw]) {
+        AGENTS_MAP[agentRaw] = { name: agentRaw, team: '', color: agentColor(agentRaw) };
+      }
+
+      return {
+        id:         getCol(r, 'ticket_id')       || '—',
+        merchantId,
+        merchant:   merchant.name,
+        cat:        getCol(r, 'ticket_category') || '—',
+        type:       normalizeType(getCol(r, 'ticket_type')) || 'other',
+        typeRaw:    getCol(r, 'ticket_type')     || 'Other',
+        priority:   normalizePriority(getCol(r, 'ticket_priority')),
+        priorityRaw: getCol(r, 'ticket_priority') || '—',
+        agentId:    agentRaw,
+        agentName:  agentRaw,
+        agentColor: AGENTS_MAP[agentRaw].color,
+        agentTeam:  '',
+        hrs:        parseFloat(getCol(r, 'ticket_hours')) || 0,
+        gmv:        merchant.gmv,
+        sector:     merchant.sector,
+        size:       merchant.size,
+        slaBreach:  slaBreach,
+        status:     getCol(r, 'ticket_status') || '—',
+        _raw: r
+      };
+    });
+
+  // Compute GMV range
+  const gmvs = RAW.map(t => t.gmv).filter(v => v > 0);
+  GMV_MAX = gmvs.length ? Math.max(...gmvs) : 1;
+  GMV_MIN = gmvs.length ? Math.min(...gmvs) : 0;
+
+  // Discover all ticket types and ensure cfg has weights
+  KNOWN_TYPES = [...new Set(RAW.map(t => t.type))].filter(Boolean);
+  KNOWN_TYPES.forEach(type => {
+    const key = 'cat-' + type;
+    if (cfg[key] === undefined) cfg[key] = CAT_DEFAULTS[type] || 6;
+  });
+
+  // Hot Sale watch — Zero Blind Spots stats (full-period rates from the sheet)
+  RECON_STATS = { total: 0, pending: 0, oxxoTotal: 0, oxxoExc: 0 };
+  reconRows.forEach(r => {
+    const txStatus = (getCol(r, 'recon_tx_status') || '').toLowerCase();
+    const pm       = (r['payment_method'] || r['payment method'] || '').toLowerCase();
+    RECON_STATS.total++;
+    if (txStatus === 'pending') RECON_STATS.pending++;
+    if (pm.includes('oxxo')) {
+      RECON_STATS.oxxoTotal++;
+      if (txStatus === 'exception') RECON_STATS.oxxoExc++;
+    }
+  });
+
+  // Build financial risk map from Reconciliation tab
+  RECON_RISK = {};
+  reconRows.forEach(r => {
+    const mid         = getCol(r, 'recon_merchant_id');
+    if (!mid) return;
+    const statusCheck = (getCol(r, 'recon_status_check') || '').toUpperCase() === 'TRUE';
+    const txStatus    = (getCol(r, 'recon_tx_status')    || '').toLowerCase();
+    const isException = !statusCheck || txStatus === 'exception' || txStatus === 'pending';
+    if (!isException) return;
+    const expected = parseFloat((getCol(r, 'recon_expected') || '0').replace(/[,$\s]/g,'')) || 0;
+    const settled  = parseFloat((getCol(r, 'recon_settled')  || '0').replace(/[,$\s]/g,'')) || 0;
+    const variance = Math.abs(expected - settled);
+    if (!RECON_RISK[mid]) RECON_RISK[mid] = { totalVariance: 0, exceptionCount: 0, worstVariance: 0, tier: 'MEDIUM' };
+    RECON_RISK[mid].totalVariance  += variance;
+    RECON_RISK[mid].exceptionCount++;
+    RECON_RISK[mid].worstVariance   = Math.max(RECON_RISK[mid].worstVariance, variance);
+  });
+
+  // Assign tiers (mirrors Python script logic)
+  const activeTicketsByMerchant = {};
+  RAW.forEach(t => {
+    if (t.status === 'open' || t.status === 'in_progress') {
+      if (t.type === 'payment_issue' || t.type === 'refund_request') {
+        activeTicketsByMerchant[t.merchantId] = (activeTicketsByMerchant[t.merchantId] || 0) + 1;
+      }
+    }
+  });
+  Object.keys(RECON_RISK).forEach(mid => {
+    const risk    = RECON_RISK[mid];
+    const size    = (MERCHANTS_MAP[mid]?.size || '').toLowerCase();
+    const active  = activeTicketsByMerchant[mid] || 0;
+    const bigMerchant = size === '>750k' || size === '250-500k';
+    if (bigMerchant && active > 0)              risk.tier = 'CRITICAL';
+    else if (risk.totalVariance > 5000 || active > 0) risk.tier = 'HIGH';
+    else                                         risk.tier = 'MEDIUM';
+  });
+
+  buildCatRows();
+  rescoreAll();
+  updateColMappingUI(tHeaders, mHeaders, rHeaders);
+}
+
+function buildCatRows() {
+  const el = document.getElementById('cat-rows');
+  if (!el) return;
+  el.innerHTML = KNOWN_TYPES.map(type => {
+    const key = 'cat-' + type;
+    const val = cfg[key] ?? 6;
+    const label = type.replace(/_/g,' ').replace(/\b\w/g, c => c.toUpperCase());
+    return `<div class="settings-row">
+      <div><div class="settings-row-label">${label}</div><div class="settings-row-sub">default: ${CAT_DEFAULTS[type]||6}</div></div>
+      <input type="range" class="settings-slider" min="0" max="30" step="1" value="${val}" id="s-${key}" oninput="onSlider('${key}',this.value)">
+      <div class="settings-val" id="sv-${key}">${val}</div>
+    </div>`;
+  }).join('');
+}
+
+// ── SCORING ENGINE ────────────────────────────────────────────────────────────
+function scoreTicket(t) {
+  const sp = { high: cfg['pri-high'], medium: cfg['pri-med'], low: cfg['pri-low'] }[t.priority] || 0;
+  const sc = cfg['cat-' + t.type] ?? 6;
+  const sg = getSizeScore(t.size);
+  const slaT = { high: cfg['sla-thresh-high'], medium: cfg['sla-thresh-med'], low: cfg['sla-thresh-low'] }[t.priority] || 24;
+  const ratio = t.hrs / slaT;
+  const ss = ratio >= 2 ? cfg['sla-2x'] : ratio >= 1 ? cfg['sla-1x'] : ratio >= 0.75 ? cfg['sla-75'] : ratio >= 0.5 ? cfg['sla-50'] : cfg['sla-0'];
+  const total = Math.round((sp + sc + sg + ss) * 10) / 10;
+  const tier  = total >= cfg['thresh-p0'] ? 'P0' : total >= cfg['thresh-p1'] ? 'P1' : total >= cfg['thresh-p2'] ? 'P2' : 'P3';
+  return { ...t, sp, sc, sg, ss, score: total, tier };
+}
+
+function rescoreAll() {
+  TICKETS = RAW.map(scoreTicket);
+  updateLegend();
+}
+
+// ── UI STATE ──────────────────────────────────────────────────────────────────
+let filterTier = 'all', filterAgent = 'all', filterStatus = 'all', searchQ = '', sortBy = 'score';
+let selectedId = null, activePanel = null;
+
+// ── SETTINGS HANDLERS ─────────────────────────────────────────────────────────
+function onSlider(key, val) {
+  cfg[key] = +val;
+  const el = document.getElementById('sv-' + key);
+  if (el) { el.textContent = val; el.classList.toggle('settings-changed', +val !== (DEFAULTS[key] ?? CAT_DEFAULTS[key.replace('cat-','')])); }
+  updateSectionMaxes();
+  rescoreAll();
+  render();
+  localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+}
+
+function onThresh() {
+  cfg['thresh-p0']      = +document.getElementById('t-p0').value;
+  cfg['thresh-p1']      = +document.getElementById('t-p1').value;
+  cfg['thresh-p2']      = +document.getElementById('t-p2').value;
+  document.getElementById('t-p3').value = cfg['thresh-p2'];
+  cfg['sla-thresh-high'] = +document.getElementById('sla-high').value;
+  cfg['sla-thresh-med']  = +document.getElementById('sla-med').value;
+  cfg['sla-thresh-low']  = +document.getElementById('sla-low').value;
+  rescoreAll();
+  render();
+  if (activePanel === 'dashboard') { renderChartPriority(); renderChartAvgTime(); renderChartDist(); renderDashboard(); }
+  localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+}
+
+function sizeMax() { return Math.max(...SIZE_BANDS.map(b => cfg['size-'+b] || 0)); }
+
+function updateSectionMaxes() {
+  document.getElementById('sm-pri').textContent = Math.max(cfg['pri-high'], cfg['pri-med'], cfg['pri-low']);
+  const catMax = KNOWN_TYPES.length ? Math.max(...KNOWN_TYPES.map(t => cfg['cat-'+t]||0)) : Math.max(...Object.values(CAT_DEFAULTS));
+  document.getElementById('sm-cat').textContent = catMax;
+  document.getElementById('sm-gmv').textContent = sizeMax();
+  document.getElementById('sm-sla').textContent = Math.max(cfg['sla-2x'], cfg['sla-1x'], cfg['sla-75'], cfg['sla-50'], cfg['sla-0']);
+}
+
+function updateLegend() {
+  document.getElementById('leg-pri').textContent  = Math.max(cfg['pri-high'], cfg['pri-med'], cfg['pri-low']);
+  const catMax = KNOWN_TYPES.length ? Math.max(...KNOWN_TYPES.map(t => cfg['cat-'+t]||0)) : 30;
+  document.getElementById('leg-cat').textContent  = catMax;
+  document.getElementById('leg-gmv').textContent  = sizeMax();
+  document.getElementById('leg-sla').textContent  = Math.max(cfg['sla-2x'], cfg['sla-1x'], cfg['sla-75'], cfg['sla-50'], cfg['sla-0']);
+  document.getElementById('leg-t0').textContent   = cfg['thresh-p0'];
+  document.getElementById('leg-t1').textContent   = cfg['thresh-p1'];
+  document.getElementById('leg-t2').textContent   = cfg['thresh-p2'];
+  document.getElementById('leg-t2b').textContent  = cfg['thresh-p2'];
+}
+
+function resetSettings() {
+  cfg = Object.assign({}, DEFAULTS, SIZE_DEFAULTS);
+  KNOWN_TYPES.forEach(t => { cfg['cat-'+t] = CAT_DEFAULTS[t] || 6; });
+  [...Object.keys(DEFAULTS), ...Object.keys(SIZE_DEFAULTS)].forEach(k => {
+    const slider = document.getElementById('s-' + k);
+    const valEl  = document.getElementById('sv-' + k);
+    const def    = DEFAULTS[k] !== undefined ? DEFAULTS[k] : SIZE_DEFAULTS[k];
+    if (slider) slider.value = def;
+    if (valEl)  { valEl.textContent = def; valEl.classList.remove('settings-changed'); }
+  });
+  KNOWN_TYPES.forEach(t => {
+    const key = 'cat-' + t;
+    const slider = document.getElementById('s-' + key);
+    const valEl  = document.getElementById('sv-' + key);
+    if (slider) slider.value = cfg[key];
+    if (valEl)  valEl.textContent = cfg[key];
+  });
+  document.getElementById('t-p0').value  = DEFAULTS['thresh-p0'];
+  document.getElementById('t-p1').value  = DEFAULTS['thresh-p1'];
+  document.getElementById('t-p2').value  = DEFAULTS['thresh-p2'];
+  document.getElementById('t-p3').value  = DEFAULTS['thresh-p2'];
+  document.getElementById('sla-high').value = DEFAULTS['sla-thresh-high'];
+  document.getElementById('sla-med').value  = DEFAULTS['sla-thresh-med'];
+  document.getElementById('sla-low').value  = DEFAULTS['sla-thresh-low'];
+  updateSectionMaxes(); rescoreAll(); render();
+  localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+}
+
+function showPanel(name) {
+  const panels  = { scoring: 'settings-panel', datasource: 'datasource-panel', dashboard: 'dashboard-panel' };
+  const navBtns = { queue: 'queue-nav-btn', scoring: 'settings-nav-btn', datasource: 'datasource-nav-btn', dashboard: 'dashboard-nav-btn' };
+  const titles  = { queue: 'Open ticket queue', scoring: 'Scoring engine settings', datasource: 'Data source settings', dashboard: 'Dashboard' };
+
+  // hide all panels and deactivate all nav buttons
+  Object.values(panels).forEach(id => document.getElementById(id).classList.remove('visible'));
+  Object.values(navBtns).forEach(id => document.getElementById(id)?.classList.remove('active'));
+
+  activePanel = name === 'queue' ? null : name;
+  document.getElementById('topbar-title').textContent = titles[name];
+  document.getElementById(navBtns[name]).classList.add('active');
+
+  if (name === 'queue') {
+    document.getElementById('queue').style.display = '';
+    document.getElementById('queue-controls').style.display = '';
+    closeDetail();
+    render();
+  } else {
+    document.getElementById('queue').style.display = 'none';
+    document.getElementById('queue-controls').style.display = 'none';
+    document.getElementById(panels[name]).classList.add('visible');
+    if (name === 'dashboard') renderDashboard();
+    if (name === 'datasource') {
+      document.getElementById('ds-sheet-id').value      = ds.sheetId;
+      document.getElementById('ds-api-key').value       = ds.apiKey;
+      document.getElementById('ds-refresh').value       = ds.refreshMin;
+      document.getElementById('ds-tab-tickets').value   = ds.tabTickets;
+      document.getElementById('ds-tab-merchants').value = ds.tabMerchants;
+      document.getElementById('ds-tab-agents').value    = ds.tabAgents;
+    }
+  }
+}
+
+function applyAndClose() {
+  showPanel('queue');
+}
+
+// ── DATA SOURCE SETTINGS ──────────────────────────────────────────────────────
+async function testConnection() {
+  const id  = document.getElementById('ds-sheet-id').value.trim();
+  const key = document.getElementById('ds-api-key').value.trim();
+  const msg = document.getElementById('ds-msg');
+  msg.className = 'ds-msg'; msg.textContent = 'Testing…';
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${id}?fields=sheets.properties.title&key=${key}`;
+    const res = await fetch(url);
+    if (!res.ok) { const e = await res.json(); throw new Error(e.error?.message || 'Auth failed'); }
+    const data = await res.json();
+    const tabs = data.sheets.map(s => s.properties.title).join(', ');
+    msg.className = 'ds-msg ok'; msg.textContent = `✓ Connected · tabs: ${tabs}`;
+  } catch(e) {
+    msg.className = 'ds-msg err'; msg.textContent = `✗ ${e.message}`;
+  }
+}
+
+function saveDataSource() {
+  ds.sheetId    = document.getElementById('ds-sheet-id').value.trim();
+  ds.apiKey     = document.getElementById('ds-api-key').value.trim();
+  ds.refreshMin = +document.getElementById('ds-refresh').value || 0;
+  ds.tabTickets   = document.getElementById('ds-tab-tickets').value.trim();
+  ds.tabMerchants = document.getElementById('ds-tab-merchants').value.trim();
+  ds.tabAgents    = document.getElementById('ds-tab-agents').value.trim();
+  // save col mapping from selects if they exist
+  const maps = ['ticket_id','ticket_merchant_id','ticket_category','ticket_type','ticket_priority','ticket_agent_id','ticket_hours','ticket_status','merchant_id','merchant_name','merchant_gmv','merchant_sector','agent_id','agent_name','agent_team'];
+  maps.forEach(k => {
+    const el = document.getElementById('colmap-' + k);
+    if (el) ds.colMap[k] = el.value;
+  });
+  localStorage.setItem(LS_DS, JSON.stringify(ds));
+  applyAndClose();
+  loadData();
+}
+
+// ── COLUMN MAPPING UI ─────────────────────────────────────────────────────────
+function buildColMapSelects(containerId, fields, headers) {
+  const el = document.getElementById(containerId);
+  el.innerHTML = fields.map(([key, label]) => {
+    const current = ds.colMap[key] || '';
+    const opts = headers.map(h => `<option value="${h}" ${h===current?'selected':''}>${h}</option>`).join('');
+    return `<div class="col-map-row">
+      <div class="col-map-label">${label}</div>
+      <select class="col-map-select" id="colmap-${key}">
+        <option value="">— not mapped —</option>
+        ${opts}
+      </select>
+    </div>`;
+  }).join('');
+}
+
+function updateColMappingUI(tHeaders, mHeaders, aHeaders) {
+  if (tHeaders.length) {
+    buildColMapSelects('col-map-tickets', [
+      ['ticket_id','Ticket ID'],['ticket_merchant_id','Merchant ID'],['ticket_category','Category'],
+      ['ticket_type','Issue Type'],['ticket_priority','Priority'],['ticket_agent_id','Agent ID'],
+      ['ticket_hours','Hours open'],['ticket_status','Status']
+    ], tHeaders);
+  }
+  if (mHeaders && mHeaders.length) {
+    buildColMapSelects('col-map-merchants', [
+      ['merchant_id','Merchant ID'],['merchant_name','Merchant name'],
+      ['merchant_gmv','Monthly GMV'],['merchant_sector','Sector']
+    ], mHeaders);
+  }
+  if (aHeaders.length) {
+    buildColMapSelects('col-map-agents', [
+      ['agent_id','Agent ID'],['agent_name','Agent name'],['agent_team','Team']
+    ], aHeaders);
+  }
+}
+
+// ── AUTO REFRESH ──────────────────────────────────────────────────────────────
+function scheduleRefresh() {
+  clearTimeout(refreshTimer);
+  if (ds.refreshMin > 0) {
+    const ms = ds.refreshMin * 60 * 1000;
+    let remaining = ms;
+    const tick = () => {
+      remaining -= 10000;
+      if (remaining <= 0) { loadData(); return; }
+      const mins = Math.floor(remaining / 60000);
+      const secs = Math.floor((remaining % 60000) / 1000);
+      document.getElementById('refresh-next').textContent = `next refresh in ${mins}:${String(secs).padStart(2,'0')}`;
+      refreshTimer = setTimeout(tick, 10000);
+    };
+    refreshTimer = setTimeout(tick, 10000);
+  } else {
+    document.getElementById('refresh-next').textContent = 'auto-refresh off';
+  }
+}
+
+function setRefreshStatus(state, msg) {
+  const dot = document.getElementById('refresh-dot');
+  dot.className = 'refresh-dot ' + state;
+  document.getElementById('refresh-msg').textContent = msg;
+  document.getElementById('topbar-sub').textContent  = msg;
+}
+
+// ── FILTER / SORT ─────────────────────────────────────────────────────────────
+function filtered() {
+  return TICKETS.filter(t => {
+    if (filterTier   !== 'all' && t.tier      !== filterTier)   return false;
+    if (filterAgent  !== 'all' && t.agentName !== filterAgent)  return false;
+    if (filterStatus !== 'all' && t.status    !== filterStatus) return false;
+    if (searchQ && !t.id.toLowerCase().includes(searchQ) && !t.merchant.toLowerCase().includes(searchQ) && !t.merchantId.toLowerCase().includes(searchQ)) return false;
+    return true;
+  }).sort((a, b) => {
+    if (sortBy === 'score') return b.score - a.score;
+    if (sortBy === 'hrs')   return b.hrs   - a.hrs;
+    if (sortBy === 'gmv')   return b.gmv   - a.gmv;
+    if (sortBy === 'status') {
+      const order = { in_progress: 0, open: 1, resolved: 2 };
+      const sa = order[a.status] ?? 3;
+      const sb = order[b.status] ?? 3;
+      return sa !== sb ? sa - sb : b.score - a.score;
+    }
+    return 0;
+  });
+}
+
+function getTierCounts(arr) { const c = { P0:0, P1:0, P2:0, P3:0 }; arr.forEach(t => c[t.tier]++); return c; }
+
+function setTier(t)   { filterTier = t; document.querySelectorAll('.tier-btn').forEach(b => b.classList.remove('active')); document.getElementById('btn-' + t).classList.add('active'); render(); }
+function setSearch(v) { searchQ = v.toLowerCase(); render(); }
+function setSort(v)   { sortBy = v; render(); }
+function setStatus(s) { filterStatus = s; document.querySelectorAll('.status-btn').forEach(b => b.classList.remove('active')); document.getElementById('sbtn-' + s).classList.add('active'); render(); }
+
+function setAgent(a) {
+  filterAgent = a;
+  document.querySelectorAll('.agent-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('abtn-' + CSS.escape(a)).classList.add('active');
+  render();
+}
+
+// ── HELPERS ───────────────────────────────────────────────────────────────────
+function scoreColor(tier) { return tier==='P0'?'var(--p0-text)':tier==='P1'?'var(--p1-text)':tier==='P2'?'var(--p2-badge)':'var(--p3-text)'; }
+
+function drawRing(score, tier) {
+  const maxScore = cfg['pri-high']
+    + (KNOWN_TYPES.length ? Math.max(...KNOWN_TYPES.map(t=>cfg['cat-'+t]||0)) : 30)
+    + sizeMax()
+    + Math.max(cfg['sla-2x'],cfg['sla-1x'],cfg['sla-75'],cfg['sla-50'],cfg['sla-0']);
+  const r=14,cx=18,cy=18,circ=2*Math.PI*r;
+  const filled = (Math.min(score,maxScore)/maxScore)*circ;
+  const col = scoreColor(tier);
+  return `<svg width="36" height="36" viewBox="0 0 36 36"><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--bg3)" stroke-width="3"/><circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${col}" stroke-width="3" stroke-dasharray="${filled} ${circ}" stroke-linecap="round"/></svg>`;
+}
+
+function slaLabel(t) {
+  const thresh = { high: cfg['sla-thresh-high'], medium: cfg['sla-thresh-med'], low: cfg['sla-thresh-low'] }[t.priority] || 24;
+  const ratio = t.hrs / thresh;
+  if (ratio >= 1) return `<span class="sla-indicator sla-breached">SLA breached ${t.hrs.toFixed(1)}h</span>`;
+  if (ratio >= 0.75) return `<span class="sla-indicator sla-warn">SLA at risk ${t.hrs.toFixed(1)}h</span>`;
+  return `<span class="sla-indicator sla-ok">${t.hrs.toFixed(1)}h open</span>`;
+}
+
+function agentChip(t) {
+  const col = t.agentColor || '#666';
+  const name = t.agentName || 'unassigned';
+  return `<div class="agent-chip"><span class="av" style="background:${col}22;color:${col}">${name[0].toUpperCase()}</span>${name}</div>`;
+}
+
+function catLabel(type) { return type.replace(/_/g,' '); }
+
+const STATUS_COLORS = { open: '#ff4444', in_progress: '#f5c518', resolved: '#1d9e75' };
+
+function statusDotColor(s) {
+  return STATUS_COLORS[(s||'').toLowerCase()] || 'var(--text3)';
+}
+
+function initStatusFilter() {
+  const statuses = [...new Set(TICKETS.map(t => t.status))].filter(Boolean).sort();
+  const el = document.getElementById('status-filter');
+  el.innerHTML = `<button class="tier-btn status-btn active" id="sbtn-all"><span style="display:flex;align-items:center"><span class="tier-dot" style="background:var(--text3)"></span>All statuses</span><span class="tier-count" id="scnt-all">${TICKETS.length}</span></button>`
+    + statuses.map(s => `<button class="tier-btn status-btn" id="sbtn-${s}"><span style="display:flex;align-items:center"><span class="tier-dot" style="background:${statusDotColor(s)}"></span>${s.replace(/_/g,' ')}</span><span class="tier-count" id="scnt-${s}">—</span></button>`).join('');
+
+  document.getElementById('sbtn-all').addEventListener('click', () => setStatus('all'));
+  statuses.forEach(s => {
+    const btn = document.getElementById('sbtn-' + s);
+    if (btn) btn.addEventListener('click', () => setStatus(s));
+  });
+  updateStatusCounts();
+}
+
+function updateStatusCounts() {
+  const counts = {};
+  TICKETS.forEach(t => { counts[t.status] = (counts[t.status] || 0) + 1; });
+  const allEl = document.getElementById('scnt-all');
+  if (allEl) allEl.textContent = TICKETS.length;
+  Object.entries(counts).forEach(([s, n]) => {
+    const el = document.getElementById('scnt-' + s);
+    if (el) el.textContent = n;
+  });
+}
+
+function initAgents() {
+  const agentNames = [...new Set(TICKETS.map(t => t.agentName))].filter(Boolean).sort();
+  const el = document.getElementById('agent-list');
+  el.innerHTML = `<button class="agent-btn active" id="abtn-all"><span class="agent-avatar" style="background:#222;color:var(--text3)">—</span>All agents</button>`
+    + agentNames.map(name => {
+        const col = TICKETS.find(t => t.agentName === name)?.agentColor || '#666';
+        return `<button class="agent-btn" data-agent="${name}" id="abtn-${CSS.escape(name)}"><span class="agent-avatar" style="background:${col}22;color:${col}">${name[0].toUpperCase()}</span>${name}</button>`;
+      }).join('');
+
+  document.getElementById('abtn-all').addEventListener('click', () => setAgent('all'));
+  agentNames.forEach(name => {
+    const btn = document.getElementById('abtn-' + CSS.escape(name));
+    if (btn) btn.addEventListener('click', () => setAgent(name));
+  });
+}
+
+// ── RENDER ────────────────────────────────────────────────────────────────────
+function render() {
+  const list = filtered();
+  const all  = getTierCounts(TICKETS);
+  const vis  = getTierCounts(list);
+
+  ['all','P0','P1','P2','P3'].forEach(k => {
+    const el = document.getElementById('cnt-' + k);
+    if (el) el.textContent = k==='all' ? TICKETS.length : all[k];
+  });
+  document.getElementById('s-p0').textContent = vis.P0;
+  document.getElementById('s-p1').textContent = vis.P1;
+  document.getElementById('s-p2').textContent = vis.P2;
+  document.getElementById('s-p3').textContent = vis.P3;
+  document.getElementById('queue-count').textContent = `${list.length} ticket${list.length!==1?'s':''} shown`;
+
+  if (activePanel) return;
+
+  if (list.length === 0) {
+    document.getElementById('queue').innerHTML = `<div class="empty"><div style="font-size:28px;margin-bottom:8px">◎</div>No tickets match this filter</div>`;
+    return;
+  }
+
+  const STATUS_BORDER = { resolved: '#1d9e75', in_progress: '#f5c518', open: '#ff4444' };
+  document.getElementById('queue').innerHTML = list.map(t => `
+    <div class="ticket ${selectedId===t.id?'selected':''}" style="border-left:3px solid ${STATUS_BORDER[t.status]||'var(--border2)'}" onclick="selectTicket('${t.id}')">
+      <div class="score-ring">${drawRing(t.score,t.tier)}<div class="score-ring-val" style="color:${scoreColor(t.tier)}">${Math.round(t.score)}</div></div>
+      <div class="ticket-body">
+        <div class="ticket-top">
+          <span class="ticket-id">${t.id}</span>
+          <span class="badge badge-${t.tier.toLowerCase()}">${t.tier}</span>
+          <span class="badge badge-cat">${catLabel(t.type)}</span>
+          <span class="badge badge-priority-${t.priority}">${t.priority}</span>
+        </div>
+        <div class="ticket-merchant">${t.merchant} <span style="font-size:11px;color:var(--text3);font-weight:400">· ${t.sector}</span></div>
+        <div class="ticket-meta"><span>${t.size && t.size!=='#n/a'?'Size: '+t.size:'Size: n/a'}</span><span>${slaLabel(t)}</span></div>
+      </div>
+      <div class="ticket-right">${agentChip(t)}<div style="font-size:10px;color:var(--text3);margin-top:4px;text-align:right">${t.status}</div></div>
+    </div>`).join('');
+}
+
+function rationale(t) {
+  const thresh = { high: cfg['sla-thresh-high'], medium: cfg['sla-thresh-med'], low: cfg['sla-thresh-low'] }[t.priority] || 24;
+  const parts = [];
+  if (t.type === 'payment_issue') parts.push('Payment issues have a high SLA breach rate and are the primary driver of SLA collapse.');
+  if (t.tier === 'P0') parts.push(`Score ${t.score} ≥ P0 threshold (${cfg['thresh-p0']}): resolve next.`);
+  if (t.gmv > 500000) parts.push(`High-GMV merchant (MXN ${t.gmv.toLocaleString()}/mo) — unresolved issues compound merchant trust risk.`);
+  if (t.hrs > thresh) parts.push(`SLA breached: ${t.hrs.toFixed(1)}h open against ${thresh}h threshold for ${t.priority} priority.`);
+  if (t.agentName === 'unassigned') parts.push('Ticket is unassigned — assign immediately.');
+  return parts.length ? parts.join(' ') : 'Standard triage priority based on category, priority, and GMV.';
+}
+
+function selectTicket(id) {
+  selectedId = id;
+  const t = TICKETS.find(x => x.id === id);
+  if (!t) return;
+  render();
+
+  document.getElementById('d-id').textContent = t.id;
+  document.getElementById('d-merchant').textContent = `${t.merchant} · ${t.sector}`;
+  document.getElementById('d-score').textContent = t.score.toFixed(1);
+  document.getElementById('d-score').style.color = scoreColor(t.tier);
+  const tierLabels = { P0:'P0 — escalate now', P1:'P1 — urgent', P2:'P2 — normal', P3:'P3 — low' };
+  document.getElementById('d-tier').textContent = tierLabels[t.tier];
+  document.getElementById('d-tier').style.color = scoreColor(t.tier);
+
+  const maxPri  = Math.max(cfg['pri-high'], cfg['pri-med'], cfg['pri-low']);
+  const maxCat  = KNOWN_TYPES.length ? Math.max(...KNOWN_TYPES.map(k => cfg['cat-'+k]||0)) : 30;
+  const maxSla  = Math.max(cfg['sla-2x'], cfg['sla-1x'], cfg['sla-75'], cfg['sla-50'], cfg['sla-0']);
+  const maxSize = sizeMax();
+
+  document.getElementById('db-priority').style.width = (maxPri>0  ? t.sp/maxPri*100  : 0)+'%';
+  document.getElementById('dv-priority').textContent = t.sp;
+  document.getElementById('db-cat').style.width      = (maxCat>0  ? t.sc/maxCat*100  : 0)+'%';
+  document.getElementById('dv-cat').textContent      = t.sc;
+  document.getElementById('db-gmv').style.width      = (maxSize>0 ? t.sg/maxSize*100 : 0)+'%';
+  document.getElementById('dv-gmv').textContent      = t.sg;
+  document.getElementById('db-sla').style.width      = (maxSla>0  ? t.ss/maxSla*100  : 0)+'%';
+  document.getElementById('dv-sla').textContent      = t.ss;
+
+  // Build detail fields dynamically from raw data + derived fields
+  const fields = [
+    ['Created on',    t._raw['created_at (adjusted)'] || t._raw['created_at (original)'] || '—'],
+    ['Issue type',    catLabel(t.type)],
+    ['Priority',      t.priority],
+    ['Status',        t.status],
+    ['Agent',         t.agentName + (t.agentTeam ? ' · '+t.agentTeam : '')],
+    ['Hours open',    t.hrs.toFixed(1) + ' hrs'],
+    ['Merchant size',  t.size || 'n/a'],
+    ['Sector',        t.sector],
+    ['Merchant ID',   t.merchantId],
+    ['Ticket ID',     t.id],
+  ];
+  document.getElementById('d-fields').innerHTML = fields.map(([label, val]) =>
+    `<div class="detail-field"><span class="detail-field-label">${label}</span><span class="detail-field-val">${val||'—'}</span></div>`
+  ).join('');
+
+  // Other open tickets for same merchant
+  const sibling = TICKETS.filter(x => x.merchantId === t.merchantId && x.id !== t.id && (x.status === 'open' || x.status === 'in_progress'));
+  const mktSection = document.getElementById('d-merchant-tickets-section');
+  if (sibling.length === 0) {
+    document.getElementById('d-merchant-tickets').innerHTML = '<div style="font-size:12px;color:var(--text3)">No other active tickets for this merchant</div>';
+  } else {
+    const byCat = {};
+    sibling.forEach(x => { byCat[x.type] = (byCat[x.type] || 0) + 1; });
+    const catRows = Object.entries(byCat).sort((a, b) => b[1] - a[1])
+      .map(([cat, count]) =>
+        `<div class="detail-field"><span class="detail-field-label">${catLabel(cat)}</span><span class="detail-field-val" style="font-weight:600">${count}</span></div>`
+      ).join('');
+    document.getElementById('d-merchant-tickets').innerHTML =
+      `<div style="font-size:11px;color:var(--text2);margin-bottom:8px">${sibling.length} active ticket${sibling.length > 1 ? 's' : ''} (open + in progress)</div>` + catRows;
+  }
+
+  // Financial exposure section
+  const risk = RECON_RISK[t.merchantId];
+  const finSection = document.getElementById('d-financial-section');
+  if (risk) {
+    const tierClass = { CRITICAL: 'fin-tier-critical', HIGH: 'fin-tier-high', MEDIUM: 'fin-tier-medium' }[risk.tier] || 'fin-tier-none';
+    const tierLabel = { CRITICAL: '🔴 CRITICAL — Tier 1 (Hot Sale Risk)', HIGH: '🟠 HIGH — Tier 2 (Action Required)', MEDIUM: '🟡 MEDIUM — Tier 3 (Batch Process)' }[risk.tier] || risk.tier;
+    document.getElementById('d-financial-tier-badge').innerHTML = `<div class="${tierClass}">${tierLabel}</div>`;
+    const finFields = [
+      ['Cash at risk',          'MXN ' + risk.totalVariance.toLocaleString('en-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })],
+      ['Unreconciled txns',     risk.exceptionCount],
+      ['Largest single gap',    'MXN ' + risk.worstVariance.toLocaleString('en-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 })],
+    ];
+    document.getElementById('d-financial-fields').innerHTML = finFields.map(([label, val]) =>
+      `<div class="detail-field"><span class="detail-field-label">${label}</span><span class="detail-field-val">${val}</span></div>`
+    ).join('');
+    finSection.style.display = '';
+  } else {
+    finSection.style.display = 'none';
+  }
+
+  document.getElementById('d-rationale').textContent = rationale(t);
+  document.getElementById('detail-panel').classList.add('open');
+}
+
+function closeDetail() {
+  selectedId = null;
+  document.getElementById('detail-panel').classList.remove('open');
+  render();
+}
+
+// ── COLLAPSIBLE ───────────────────────────────────────────────────────────────
+function toggleCollapse(bodyId, chevronId) {
+  const body    = document.getElementById(bodyId);
+  const chevron = document.getElementById(chevronId);
+  const closed  = body.classList.toggle('closed');
+  chevron.classList.toggle('closed', closed);
+}
+
+// ── DASHBOARD ────────────────────────────────────────────────────────────────
+let chartWeekly = null, chartCategory = null, chartDist = null, chartAgents = null, chartPriority = null, chartAvgTime = null, chartFinancial = null;
+
+const CHART_DEFAULTS = {
+  color: '#e8e8f0',
+  font: { family: "'IBM Plex Sans', sans-serif", size: 11 },
+  grid: { color: '#2a2a32' },
+  ticks: { color: '#8888a0' },
+};
+
+function slaThresh(priority) {
+  return { high: cfg['sla-thresh-high'], medium: cfg['sla-thresh-med'], low: cfg['sla-thresh-low'] }[priority] || 24;
+}
+
+function isBreached(t) {
+  return t.hrs >= slaThresh(t.priority);
+}
+
+function renderHotSaleWatch() {
+  const setTile = (id, text, level) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = level === 'red' ? 'var(--p0-text)' : level === 'amber' ? 'var(--p1-text)' : level === 'green' ? 'var(--green)' : 'var(--text2)';
+  };
+
+  // Tile 1 — OXXO exception rate (the Jan–Feb failure mode)
+  if (RECON_STATS.oxxoTotal > 0) {
+    const r = RECON_STATS.oxxoExc / RECON_STATS.oxxoTotal * 100;
+    setTile('hw-oxxo', r.toFixed(1) + '%', r > 10 ? 'red' : r >= 6 ? 'amber' : 'green');
+  } else setTile('hw-oxxo', 'no data', null);
+
+  // Tile 2 — pending rate (the Feb 9–11 failure mode)
+  if (RECON_STATS.total > 0) {
+    const p = RECON_STATS.pending / RECON_STATS.total * 100;
+    setTile('hw-pending', p.toFixed(1) + '%', p > 15 ? 'red' : p >= 5 ? 'amber' : 'green');
+  } else setTile('hw-pending', 'no data', null);
+
+  // Tile 3 — payment-issue volume: latest week vs avg of prior weeks
+  const weekCounts = {};
+  TICKETS.forEach(t => {
+    if (t.type !== 'payment_issue') return;
+    const wk = (t._raw['week number'] || t._raw['week_number'] || '').trim();
+    if (!wk) return;
+    weekCounts[wk] = (weekCounts[wk] || 0) + 1;
+  });
+  const weeks = Object.keys(weekCounts).sort();
+  if (weeks.length >= 2) {
+    const latest = weekCounts[weeks[weeks.length - 1]];
+    const prior  = weeks.slice(0, -1).map(w => weekCounts[w]);
+    const base   = prior.reduce((s, v) => s + v, 0) / prior.length;
+    const ratio  = base > 0 ? latest / base : 0;
+    setTile('hw-pivol', ratio.toFixed(2) + '×', ratio > 1.5 ? 'red' : ratio >= 1.3 ? 'amber' : 'green');
+  } else if (weeks.length === 1) {
+    setTile('hw-pivol', weekCounts[weeks[0]] + ' this wk', null);
+  } else setTile('hw-pivol', 'no data', null);
+}
+
+function renderDashboard() {
+  if (!TICKETS.length) return;
+
+  const total    = TICKETS.length;
+  const breached = TICKETS.filter(isBreached);
+  const rate     = (breached.length / total * 100).toFixed(1);
+  const avgHrs   = (TICKETS.reduce((s, t) => s + t.hrs, 0) / total).toFixed(1);
+
+  const backlog = TICKETS.filter(t => t.status === 'open' || t.status === 'in_progress').length;
+  document.getElementById('dk-total').textContent       = total.toLocaleString();
+  document.getElementById('dk-breach').textContent      = breached.length.toLocaleString();
+  document.getElementById('dk-breach-rate').textContent = rate + '%';
+  document.getElementById('dk-avg-hrs').textContent     = avgHrs + 'h';
+  document.getElementById('dk-backlog').textContent     = backlog.toLocaleString();
+  document.getElementById('dash-note').textContent     =
+    `SLA thresholds: high=${cfg['sla-thresh-high']}h · medium=${cfg['sla-thresh-med']}h · low=${cfg['sla-thresh-low']}h · breach = first_response_hours ≥ threshold`;
+
+  renderHotSaleWatch();
+  renderChartWeekly();
+  renderChartCategory();
+  renderChartDist();
+  renderChartPriority();
+  renderChartAvgTime();
+  renderChartAgents();
+  renderChartFinancial();
+}
+
+function renderChartWeekly() {
+  // Group tickets by Year-Week
+  const weekMap = {};
+  TICKETS.forEach(t => {
+    const key = (t._raw['week number'] || t._raw['week_number'] || '?').trim();
+    if (!weekMap[key]) weekMap[key] = { total: 0, breached: 0 };
+    weekMap[key].total++;
+    if (isBreached(t)) weekMap[key].breached++;
+  });
+
+  const labels      = Object.keys(weekMap).sort();
+  const counts      = labels.map(k => weekMap[k].total);
+  const breachRates = labels.map(k => +(weekMap[k].breached / weekMap[k].total * 100).toFixed(1));
+
+  if (chartWeekly) chartWeekly.destroy();
+  chartWeekly = new Chart(document.getElementById('chart-weekly'), {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Tickets',
+          data: counts,
+          backgroundColor: '#6c63ff44',
+          borderColor: '#6c63ff',
+          borderWidth: 1,
+          yAxisID: 'y',
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'Breach rate %',
+          data: breachRates,
+          borderColor: '#ff4444',
+          backgroundColor: '#ff444422',
+          borderWidth: 2,
+          pointRadius: 3,
+          pointBackgroundColor: '#ff4444',
+          tension: 0.3,
+          yAxisID: 'y2',
+          order: 1,
+          fill: true,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#8888a0', font: CHART_DEFAULTS.font, boxWidth: 12 } },
+        tooltip: {
+          backgroundColor: '#1e1e24',
+          borderColor: '#2a2a32',
+          borderWidth: 1,
+          titleColor: '#e8e8f0',
+          bodyColor: '#8888a0',
+          callbacks: { label: ctx => ctx.dataset.label + ': ' + ctx.parsed.y + (ctx.datasetIndex === 1 ? '%' : '') }
+        }
+      },
+      scales: {
+        x: { ticks: { ...CHART_DEFAULTS.ticks, maxRotation: 45 }, grid: CHART_DEFAULTS.grid },
+        y: {
+          type: 'linear', position: 'left',
+          ticks: { ...CHART_DEFAULTS.ticks, stepSize: 1 },
+          grid: CHART_DEFAULTS.grid,
+          title: { display: true, text: 'Tickets', color: '#4a4a60', font: CHART_DEFAULTS.font }
+        },
+        y2: {
+          type: 'linear', position: 'right',
+          min: 0, max: 60,
+          ticks: { ...CHART_DEFAULTS.ticks, callback: v => v + '%' },
+          grid: { display: false },
+          title: { display: true, text: 'Breach rate', color: '#4a4a60', font: CHART_DEFAULTS.font }
+        }
+      }
+    }
+  });
+}
+
+function renderChartCategory() {
+  const catMap = {};
+  TICKETS.forEach(t => {
+    const k = t.typeRaw || t.type || 'other';
+    if (!catMap[k]) catMap[k] = { total: 0, breached: 0 };
+    catMap[k].total++;
+    if (isBreached(t)) catMap[k].breached++;
+  });
+
+  const labels = Object.keys(catMap).sort((a, b) => {
+    return (catMap[b].breached / catMap[b].total) - (catMap[a].breached / catMap[a].total);
+  });
+  const rates  = labels.map(k => +(catMap[k].breached / catMap[k].total * 100).toFixed(1));
+  const counts = labels.map(k => catMap[k].total);
+
+  if (chartCategory) chartCategory.destroy();
+  chartCategory = new Chart(document.getElementById('chart-category'), {
+    type: 'bar',
+    data: {
+      labels: labels.map(l => l.replace(/_/g,' ')),
+      datasets: [{
+        label: 'Breach rate %',
+        data: rates,
+        backgroundColor: rates.map(r => r >= 50 ? '#ff444488' : r >= 25 ? '#ff880088' : '#2288ff88'),
+        borderColor:     rates.map(r => r >= 50 ? '#ff4444'   : r >= 25 ? '#ff8800'   : '#2288ff'),
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e1e24', borderColor: '#2a2a32', borderWidth: 1,
+          titleColor: '#e8e8f0', bodyColor: '#8888a0',
+          callbacks: {
+            label: ctx => `Breach rate: ${ctx.parsed.y}% (${counts[ctx.dataIndex]} tickets)`
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { ...CHART_DEFAULTS.ticks }, grid: CHART_DEFAULTS.grid },
+        y: {
+          min: 0, max: 100,
+          ticks: { ...CHART_DEFAULTS.ticks, callback: v => v + '%' },
+          grid: CHART_DEFAULTS.grid
+        }
+      }
+    }
+  });
+}
+
+function renderChartDist() {
+  const edges        = [0, 4, 8, 24, 48, Infinity];
+  const bucketLabels = ['0–4h', '4–8h', '8–24h', '24–48h', '+48h'];
+  const withinCounts = new Array(bucketLabels.length).fill(0);
+  const breachCounts = new Array(bucketLabels.length).fill(0);
+
+  TICKETS.forEach(t => {
+    const idx = edges.findIndex((e, i) => t.hrs >= e && t.hrs < edges[i + 1]);
+    if (idx === -1) return;
+    if (isBreached(t)) breachCounts[idx]++;
+    else withinCounts[idx]++;
+  });
+
+  if (chartDist) chartDist.destroy();
+  chartDist = new Chart(document.getElementById('chart-dist'), {
+    type: 'bar',
+    data: {
+      labels: bucketLabels,
+      datasets: [
+        {
+          label: 'Within SLA',
+          data: withinCounts,
+          backgroundColor: '#1d9e7588',
+          borderColor: '#1d9e75',
+          borderWidth: 1,
+          stack: 'dist',
+        },
+        {
+          label: 'Breached SLA',
+          data: breachCounts,
+          backgroundColor: '#ff444488',
+          borderColor: '#ff4444',
+          borderWidth: 1,
+          stack: 'dist',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#8888a0', font: CHART_DEFAULTS.font, boxWidth: 12 } },
+        tooltip: {
+          backgroundColor: '#1e1e24', borderColor: '#2a2a32', borderWidth: 1,
+          titleColor: '#e8e8f0', bodyColor: '#8888a0',
+        }
+      },
+      scales: {
+        x: { stacked: true, ticks: { ...CHART_DEFAULTS.ticks, maxRotation: 45 }, grid: CHART_DEFAULTS.grid },
+        y: { stacked: true, ticks: { ...CHART_DEFAULTS.ticks }, grid: CHART_DEFAULTS.grid }
+      }
+    }
+  });
+}
+
+function renderChartPriority() {
+  const priorities = ['high', 'medium', 'low'];
+  const labels     = [
+    `High (SLA ≤${cfg['sla-thresh-high']}h)`,
+    `Medium (SLA ≤${cfg['sla-thresh-med']}h)`,
+    `Low (SLA ≤${cfg['sla-thresh-low']}h)`,
+  ];
+
+  const withinData   = [];
+  const breachedData = [];
+
+  priorities.forEach(p => {
+    const group = TICKETS.filter(t => t.priority === p);
+    const b     = group.filter(isBreached).length;
+    breachedData.push(b);
+    withinData.push(group.length - b);
+  });
+
+  if (chartPriority) chartPriority.destroy();
+  chartPriority = new Chart(document.getElementById('chart-priority'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        {
+          label: 'Within SLA',
+          data: withinData,
+          backgroundColor: '#1d9e7588',
+          borderColor: '#1d9e75',
+          borderWidth: 1,
+          stack: 'pri',
+        },
+        {
+          label: 'Breached SLA',
+          data: breachedData,
+          backgroundColor: '#ff444488',
+          borderColor: '#ff4444',
+          borderWidth: 1,
+          stack: 'pri',
+        }
+      ]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#8888a0', font: CHART_DEFAULTS.font, boxWidth: 12 } },
+        tooltip: {
+          backgroundColor: '#1e1e24', borderColor: '#2a2a32', borderWidth: 1,
+          titleColor: '#e8e8f0', bodyColor: '#8888a0',
+          callbacks: {
+            footer: items => {
+              const total = items.reduce((s, i) => s + i.parsed.x, 0);
+              const breached = items.find(i => i.dataset.label === 'Breached SLA')?.parsed.x || 0;
+              return `Total: ${total} · Breach rate: ${total ? (breached/total*100).toFixed(1) : 0}%`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true, ticks: { ...CHART_DEFAULTS.ticks, stepSize: 1 }, grid: CHART_DEFAULTS.grid },
+        y: { stacked: true, ticks: { ...CHART_DEFAULTS.ticks }, grid: CHART_DEFAULTS.grid }
+      }
+    }
+  });
+}
+
+function renderChartAvgTime() {
+  const priorities  = ['high', 'medium', 'low'];
+  const labels      = ['High', 'Medium', 'Low'];
+  const thresholds  = [cfg['sla-thresh-high'], cfg['sla-thresh-med'], cfg['sla-thresh-low']];
+  const barColors   = { high: '#ff444488', medium: '#ff880088', low: '#2288ff88' };
+  const borderColors = { high: '#ff4444', medium: '#ff8800', low: '#2288ff' };
+
+  const avgs = priorities.map(p => {
+    const group = TICKETS.filter(t => t.priority === p);
+    if (!group.length) return 0;
+    return +(group.reduce((s, t) => s + t.hrs, 0) / group.length).toFixed(1);
+  });
+
+  if (chartAvgTime) chartAvgTime.destroy();
+  chartAvgTime = new Chart(document.getElementById('chart-avgtime'), {
+    data: {
+      labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Avg response time (h)',
+          data: avgs,
+          backgroundColor: priorities.map(p => barColors[p]),
+          borderColor:     priorities.map(p => borderColors[p]),
+          borderWidth: 1,
+          yAxisID: 'y',
+          order: 2,
+        },
+        {
+          type: 'line',
+          label: 'SLA threshold (h)',
+          data: thresholds,
+          borderColor: '#6c63ff',
+          borderDash: [6, 3],
+          borderWidth: 2,
+          pointRadius: 4,
+          pointBackgroundColor: '#6c63ff',
+          backgroundColor: 'transparent',
+          yAxisID: 'y',
+          order: 1,
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { labels: { color: '#8888a0', font: CHART_DEFAULTS.font, boxWidth: 12 } },
+        tooltip: {
+          backgroundColor: '#1e1e24', borderColor: '#2a2a32', borderWidth: 1,
+          titleColor: '#e8e8f0', bodyColor: '#8888a0',
+          callbacks: {
+            label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y}h`,
+            footer: items => {
+              const avg    = items.find(i => i.datasetIndex === 0)?.parsed.y || 0;
+              const thresh = items.find(i => i.datasetIndex === 1)?.parsed.y || 0;
+              const diff   = +(avg - thresh).toFixed(1);
+              return diff > 0 ? `⚠ ${diff}h over SLA` : `✓ ${Math.abs(diff)}h under SLA`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { ticks: { ...CHART_DEFAULTS.ticks }, grid: CHART_DEFAULTS.grid },
+        y: {
+          ticks: { ...CHART_DEFAULTS.ticks, callback: v => v + 'h' },
+          grid: CHART_DEFAULTS.grid,
+          title: { display: true, text: 'Hours', color: '#4a4a60', font: CHART_DEFAULTS.font }
+        }
+      }
+    }
+  });
+}
+
+function renderChartAgents() {
+  const agentMap = {};
+  TICKETS.forEach(t => {
+    const s = (t.status || '').toLowerCase();
+    if (s !== 'open' && s !== 'in_progress') return;
+    const name = t.agentName || 'unassigned';
+    if (!agentMap[name]) agentMap[name] = { open: 0, in_progress: 0 };
+    if (s === 'open') agentMap[name].open++;
+    else agentMap[name].in_progress++;
+  });
+
+  const agents = Object.keys(agentMap).sort((a, b) => {
+    const totA = agentMap[a].open + agentMap[a].in_progress;
+    const totB = agentMap[b].open + agentMap[b].in_progress;
+    return totB - totA;
+  });
+
+  const openCounts       = agents.map(a => agentMap[a].open);
+  const inProgressCounts = agents.map(a => agentMap[a].in_progress);
+
+  if (chartAgents) chartAgents.destroy();
+  chartAgents = new Chart(document.getElementById('chart-agents'), {
+    type: 'bar',
+    data: {
+      labels: agents,
+      datasets: [
+        {
+          label: 'Open',
+          data: openCounts,
+          backgroundColor: '#2288ff88',
+          borderColor: '#2288ff',
+          borderWidth: 1,
+          stack: 'agent',
+        },
+        {
+          label: 'In progress',
+          data: inProgressCounts,
+          backgroundColor: '#ff880088',
+          borderColor: '#ff8800',
+          borderWidth: 1,
+          stack: 'agent',
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { labels: { color: '#8888a0', font: CHART_DEFAULTS.font, boxWidth: 12 } },
+        tooltip: {
+          backgroundColor: '#1e1e24', borderColor: '#2a2a32', borderWidth: 1,
+          titleColor: '#e8e8f0', bodyColor: '#8888a0',
+          callbacks: {
+            footer: items => {
+              const total = items.reduce((s, i) => s + i.parsed.y, 0);
+              return `Total: ${total}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true, ticks: { ...CHART_DEFAULTS.ticks }, grid: CHART_DEFAULTS.grid },
+        y: { stacked: true, ticks: { ...CHART_DEFAULTS.ticks, stepSize: 1 }, grid: CHART_DEFAULTS.grid }
+      }
+    }
+  });
+}
+
+function renderChartFinancial() {
+  const TIER_COLORS = { CRITICAL: '#ff4444', HIGH: '#ff8800', MEDIUM: '#2288ff' };
+
+  // Build sorted list of merchants with risk data
+  const merchants = Object.keys(RECON_RISK)
+    .map(mid => ({
+      mid,
+      name:     MERCHANTS_MAP[mid]?.name || mid,
+      variance: RECON_RISK[mid].totalVariance,
+      count:    RECON_RISK[mid].exceptionCount,
+      worst:    RECON_RISK[mid].worstVariance,
+      tier:     RECON_RISK[mid].tier,
+    }))
+    .sort((a, b) => b.variance - a.variance)
+    .slice(0, 15);
+
+  const totalRisk = Object.values(RECON_RISK).reduce((s, r) => s + r.totalVariance, 0);
+  const el = document.getElementById('dk-cash-risk');
+  if (el) el.textContent = 'MXN ' + totalRisk.toLocaleString('en-MX', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  if (!merchants.length) {
+    if (chartFinancial) { chartFinancial.destroy(); chartFinancial = null; }
+    return;
+  }
+
+  const labels = merchants.map(m => m.name.length > 20 ? m.name.slice(0, 18) + '…' : m.name);
+  const values = merchants.map(m => +m.variance.toFixed(2));
+  const colors = merchants.map(m => (TIER_COLORS[m.tier] || '#666') + 'aa');
+  const borders = merchants.map(m => TIER_COLORS[m.tier] || '#666');
+
+  if (chartFinancial) chartFinancial.destroy();
+  chartFinancial = new Chart(document.getElementById('chart-financial'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Cash at risk (MXN)',
+        data: values,
+        backgroundColor: colors,
+        borderColor: borders,
+        borderWidth: 1,
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1e1e24', borderColor: '#2a2a32', borderWidth: 1,
+          titleColor: '#e8e8f0', bodyColor: '#8888a0',
+          callbacks: {
+            label: ctx => {
+              const m = merchants[ctx.dataIndex];
+              return [
+                `Cash at risk: MXN ${m.variance.toLocaleString('en-MX', {minimumFractionDigits:2})}`,
+                `Unreconciled txns: ${m.count}`,
+                `Largest gap: MXN ${m.worst.toLocaleString('en-MX', {minimumFractionDigits:2})}`,
+                `Tier: ${m.tier}`,
+              ];
+            }
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: { ...CHART_DEFAULTS.ticks, callback: v => 'MXN ' + v.toLocaleString() },
+          grid: CHART_DEFAULTS.grid,
+        },
+        y: { ticks: { ...CHART_DEFAULTS.ticks }, grid: CHART_DEFAULTS.grid }
+      }
+    }
+  });
+}
+
+// ── BOOT ──────────────────────────────────────────────────────────────────────
+updateSectionMaxes();
+updateLegend();
+document.getElementById('queue-nav-btn').classList.add('active');
+loadData();
+</script>
+</body>
+</html>
